@@ -1,7 +1,12 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 
+/* Dark mode variant (Tailwind v4 custom variant) */
 @custom-variant dark (&:is(.dark *));
+
+/* Optional: smooth color transition for dark/light toggle */
+html {
+  transition: background-color 0.3s, color 0.3s;
+}
 
 @theme inline {
   --color-background: var(--background);
