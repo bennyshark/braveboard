@@ -19,18 +19,18 @@ export default function Navbar() {
   if (pathname === "/" || pathname === "/login") return null;
 
   return (
-    <nav className="w-full border-b bg-white dark:bg-gray-900 dark:border-gray-700 px-6 py-3 flex items-center justify-between">
-      {/* Left: Logo + Links */}
-      <div className="flex items-center gap-8">
-        <Link
-          href="/"
-          className="font-bold text-xl text-indigo-600 dark:text-indigo-400"
-        >
-          BraveBoard
-        </Link>
+    <nav className="
+  fixed top-0 left-0 right-0 
+  md:left-64 
+  z-40
+  border-b bg-white dark:bg-gray-900 dark:border-gray-700 
+  px-6 py-6 
+  flex items-center justify-between
+">
 
-      </div>
-      <div className="hidden md:flex items-center gap-20 text-gray-700 dark:text-gray-300">
+      {/* Left: Logo + Links */}
+
+      <div className="hidden md:flex items-center pl-50 gap-40 text-gray-700 dark:text-gray-300">
           <Link href="/feed">Feed</Link>
           <Link href="/faculty">Faculty</Link>
           <Link href="/org">Org</Link>
