@@ -19,7 +19,7 @@ function Page() {
         <div className="flex items-center justify-center px-4">
             <div className="w-full bg-white space-y-2 px-4 py-10 sm:w-96 sm:px-8">
                 <header className="text-center pb-4">
-                    <h1 className="mt-4 text-2xl font-medium tracking-tight text-black">Sign in to Google Auth Demo</h1>
+                    <h1 className="mt-4 text-2xl font-medium tracking-tight text-black">Sign in to BraveBoard</h1>
                 </header>
                 <div className="space-y-3">
                     <form action={handleSignIn}>
