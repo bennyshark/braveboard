@@ -19,9 +19,9 @@ export default function Navbar() {
   return (
     <header className="h-25 bg-white dark:bg-gray-900 border-b dark:border-gray-700 px-6 flex items-center justify-between shrink-0">
       <div className="hidden pl-50 md:flex items-center gap-40 text-gray-700 dark:text-gray-300">
-        <Link href="/feed">Feed</Link>
-        <Link href="/faculty">Faculty</Link>
-        <Link href="/org">Org</Link>
+        <Link href="/">Feed</Link>
+        <Link href="/">Faculty</Link>
+        <Link href="/">Org</Link>
       </div>
 
       <div className="flex items-center gap-4">
