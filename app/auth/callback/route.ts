@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     }
 
     // Success - redirect to home
-    return NextResponse.redirect(new URL("/", requestUrl.origin))
+    return NextResponse.redirect(new URL("/home", requestUrl.origin))
 
   } catch (error) {
     console.error("Auth callback error:", error)
