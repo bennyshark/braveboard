@@ -17,9 +17,7 @@ function SignInContent() {
     // Get error from URL query parameter
     const errorParam = searchParams.get("error")
     if (errorParam) {
-      // Decode the error message
-      const decodedError = decodeURIComponent(errorParam.replace(/\+/g, ' '))
-      setError(decodedError)
+      setError("Please use your @firstasia.edu.ph account")
     }
   }, [searchParams])
 
@@ -33,7 +31,10 @@ function SignInContent() {
       await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${origin}/auth/callback`
+          redirectTo: `${origin}/auth/callback`,
+          queryParams: {
+            prompt: 'select_account' // This forces Google to show account selection every time
+          }
         }
       })
     } catch (err) {
@@ -81,6 +82,9 @@ function SignInContent() {
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800 text-center">
                 {error}
+              </p>
+              <p className="text-xs text-red-700 text-center mt-1">
+                Click the button above to try again with a different account.
               </p>
             </div>
           )}
