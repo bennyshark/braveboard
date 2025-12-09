@@ -49,7 +49,7 @@ function SignInContent() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Braveboard</h1>
-          <p className="text-gray-600 mt-2">First Asia Institute Portal</p>
+          <p className="text-gray-600 mt-2">for the Bravehearts</p>
         </div>
 
         {/* Sign In Card */}
