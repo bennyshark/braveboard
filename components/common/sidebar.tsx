@@ -6,12 +6,12 @@ import {
   Calendar, 
   Image, 
   Settings,
-  LogOut,
   MessageSquare,
   Users,
   Briefcase,
   FileText,
-  User
+  User,
+  Bookmark
 } from "lucide-react"
 import { useState } from "react"
 
@@ -29,16 +29,16 @@ export default function Sidebar() {
   ]
 
   return (
-    <aside className="h-full w-64 border-r bg-white">
-      {/* Navigation Section */}
-      <div className="p-4 h-full flex flex-col pt-15">
+    <aside className="h-full w-full bg-[#FDFCF8] px-4 py-6 border-r border-stone-100">
+      <div className="h-full flex flex-col">
         {/* Main Navigation */}
-        <div className="flex-1">
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
           <div className="mb-8">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-4">
+            <h3 className="flex items-center gap-2 text-xs font-bold text-stone-400 uppercase tracking-widest mb-4 px-4">
+              <Bookmark className="h-3 w-3" />
               Navigation
             </h3>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {menuItems.map((item) => {
                 const Icon = item.icon
                 const isActive = activeItem === item.id
@@ -47,14 +47,16 @@ export default function Sidebar() {
                   <button
                     key={item.id}
                     onClick={() => setActiveItem(item.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
                       isActive
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                        ? "bg-white border-2 border-stone-100 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] text-blue-700"
+                        : "text-stone-600 hover:bg-stone-50 hover:text-stone-900 border-2 border-transparent"
                     }`}
                   >
-                    <Icon className={`h-5 w-5 ${isActive ? "text-blue-600" : "text-gray-500"}`} />
-                    <span className="font-medium">{item.label}</span>
+                    <Icon className={`h-5 w-5 transition-colors ${
+                      isActive ? "text-blue-500 fill-blue-50" : "text-stone-400 group-hover:text-stone-600"
+                    }`} />
+                    <span className="font-semibold text-sm">{item.label}</span>
                   </button>
                 )
               })}
@@ -63,38 +65,33 @@ export default function Sidebar() {
 
           {/* Account Section */}
           <div>
-  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-4 pt-5">
-    Account
-  </h3>
+            <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4 px-4 pt-4 border-t border-dashed border-stone-200">
+              Account
+            </h3>
 
-  <div className="space-y-1">
+            <div className="space-y-1.5">
+              <button className="w-full flex items-center gap-3 px-4 py-3 text-stone-600 hover:bg-stone-50 rounded-2xl transition-colors">
+                <User className="h-5 w-5 text-stone-400" />
+                <span className="font-semibold text-sm">Profile</span>
+              </button>
 
-    {/* Profile */}
-    <button className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 hover:text-gray-900 rounded-lg">
-      <User className="h-5 w-5 text-gray-500" />
-      <span className="font-medium">Profile</span>
-    </button>
-
-    {/* Settings */}
-    <button className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 hover:text-gray-900 rounded-lg">
-      <Settings className="h-5 w-5 text-gray-500" />
-      <span className="font-medium">Settings</span>
-    </button>
-
-  </div>
-</div>
-
+              <button className="w-full flex items-center gap-3 px-4 py-3 text-stone-600 hover:bg-stone-50 rounded-2xl transition-colors">
+                <Settings className="h-5 w-5 text-stone-400" />
+                <span className="font-semibold text-sm">Settings</span>
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* User Profile Footer - Fixed at bottom */}
-        <div className="pt-4 border-t">
-          <div className="flex items-center gap-3 p-3">
-            <div className="h-10 w-10 rounded-full g-linear-to-br from-blue-400 to-blue-600 flex items-center justify-center">
-              <span className="text-white font-medium">JD</span>
+        {/* User Profile Footer - Card Style */}
+        <div className="pt-4 mt-2">
+          <div className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-stone-100 shadow-sm cursor-pointer hover:border-blue-200 transition-colors">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-300 to-orange-500 flex items-center justify-center shadow-inner">
+              <span className="text-white font-bold text-sm">JD</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-gray-900 truncate">John Doe</p>
-              <p className="text-xs text-gray-500 truncate">Faculty Member</p>
+              <p className="font-bold text-stone-800 text-sm truncate">John Doe</p>
+              <p className="text-xs text-stone-500 truncate">Faculty Member</p>
             </div>
           </div>
         </div>
