@@ -379,10 +379,10 @@ export default function ImportProfiles() {
             </thead>
             <tbody>
               <tr>
-                <td className="border px-4 py-2 font-mono">s2021100056@firstasia.edu.ph</td>
-                <td className="border px-4 py-2">Benedict</td>
-                <td className="border px-4 py-2">Guerrero</td>
-                <td className="border px-4 py-2">Gutierrez</td>
+                <td className="border px-4 py-2 font-mono">s2021193856@firstasia.edu.ph</td>
+                <td className="border px-4 py-2">Juan</td>
+                <td className="border px-4 py-2">Garcia</td>
+                <td className="border px-4 py-2">Dela Cruz</td>
                 <td className="border px-4 py-2">CCIT</td>
                 <td className="border px-4 py-2">BSCS</td>
               </tr>
