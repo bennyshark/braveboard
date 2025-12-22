@@ -75,7 +75,7 @@ export default function HomePage() {
           time: "3 hours ago",
           likes: 245,
           comments: 42,
-          images: 0
+          imageUrls: []
         },
         {
           id: 102,
@@ -85,7 +85,7 @@ export default function HomePage() {
           time: "2 hours ago",
           likes: 89,
           comments: 15,
-          images: 0
+          imageUrls: []
         },
         {
           id: 103,
@@ -95,7 +95,7 @@ export default function HomePage() {
           time: "1 hour ago",
           likes: 34,
           comments: 8,
-          images: 0
+          imageUrls: []
         }
       ]
     },
@@ -118,7 +118,7 @@ export default function HomePage() {
           time: "1 day ago",
           likes: 189,
           comments: 28,
-          images: 3
+          imageUrls: ['https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800', 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=800', 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=800']
         },
         {
           id: 202,
@@ -128,7 +128,7 @@ export default function HomePage() {
           time: "5 hours ago",
           likes: 67,
           comments: 12,
-          images: 1
+          imageUrls: ['https://images.unsplash.com/photo-1560253023-3ec5d502959f?w=800']
         },
         {
           id: 203,
@@ -138,7 +138,7 @@ export default function HomePage() {
           time: "4 hours ago",
           likes: 45,
           comments: 7,
-          images: 0
+          imageUrls: []
         }
       ]
     },
@@ -161,7 +161,7 @@ export default function HomePage() {
           time: "2 days ago",
           likes: 134,
           comments: 31,
-          images: 2
+          imageUrls: ['https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=800', 'https://images.unsplash.com/photo-1618477388954-7852f32655ec?w=800']
         },
         {
           id: 302,
@@ -171,7 +171,7 @@ export default function HomePage() {
           time: "1 day ago",
           likes: 56,
           comments: 12,
-          images: 0
+          imageUrls: []
         }
       ]
     }
@@ -237,27 +237,38 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Main Filter Tabs - Compact */}
-        <div className="flex overflow-x-auto pb-2 space-x-2 scrollbar-hide">
-          {feedFilters.map((filter) => {
-            const Icon = filter.icon
-            const isActive = activeFeedFilter === filter.id
-            
-            return (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFeedFilter(filter.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition-all duration-200 ${
-                  isActive
-                    ? `bg-gradient-to-r ${filter.color === "blue" ? "from-blue-500 to-blue-600 text-white shadow-md" : filter.color === "orange" ? "from-orange-500 to-orange-600 text-white shadow-md" : "from-purple-500 to-purple-600 text-white shadow-md"}`
-                    : "bg-white border border-gray-300 text-gray-600 hover:border-gray-400"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {filter.label}
-              </button>
-            )
-          })}
+        {/* Main Filter Tabs with Create Button */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex overflow-x-auto pb-2 space-x-2 scrollbar-hide flex-1">
+            {feedFilters.map((filter) => {
+              const Icon = filter.icon
+              const isActive = activeFeedFilter === filter.id
+              
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFeedFilter(filter.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition-all duration-200 ${
+                    isActive
+                      ? `bg-gradient-to-r ${filter.color === "blue" ? "from-blue-500 to-blue-600 text-white shadow-md" : filter.color === "orange" ? "from-orange-500 to-orange-600 text-white shadow-md" : "from-purple-500 to-purple-600 text-white shadow-md"}`
+                      : "bg-white border border-gray-300 text-gray-600 hover:border-gray-400"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {filter.label}
+                </button>
+              )
+            })}
+          </div>
+          
+          {/* Create Button */}
+          <button 
+            onClick={() => console.log('Create:', activeFeedFilter === 'announcements' ? 'post' : 'event')}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold text-sm whitespace-nowrap shadow-md hover:shadow-lg transition-all"
+          >
+            <Plus className="h-4 w-4" />
+            {activeFeedFilter === 'announcements' ? 'Create Post' : 'Create Event'}
+          </button>
         </div>
       </div>
 
@@ -273,7 +284,7 @@ export default function HomePage() {
                   onClick={() => setSelectedOrg(null)}
                   className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${selectedOrg === null ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                 >
-                  All
+                  All Organizations
                 </button>
                 {organizations.slice(0, 3).map(org => (
                   <button
@@ -281,7 +292,7 @@ export default function HomePage() {
                     onClick={() => setSelectedOrg(org.id)}
                     className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${selectedOrg === org.id ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                   >
-                    {org.code}
+                    {org.name}
                   </button>
                 ))}
               </div>
@@ -461,12 +472,12 @@ export default function HomePage() {
                                 <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
                                   <Clock className="h-3 w-3" />
                                   <span>{post.time}</span>
-                                  {post.images > 0 && (
+                                  {post.imageUrls && post.imageUrls.length > 0 && (
                                     <>
                                       <span>•</span>
                                       <span className="flex items-center gap-1">
                                         <Image className="h-3 w-3" />
-                                        {post.images}
+                                        {post.imageUrls.length}
                                       </span>
                                     </>
                                   )}
@@ -483,6 +494,35 @@ export default function HomePage() {
                         <p className="text-gray-800 text-sm leading-relaxed mb-3">
                           {post.content}
                         </p>
+
+                        {/* Post Images */}
+                        {post.imageUrls && post.imageUrls.length > 0 && (
+                          <div className={`mb-3 ${
+                            post.imageUrls.length === 1 ? 'grid grid-cols-1' :
+                            post.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
+                            post.imageUrls.length === 3 ? 'grid grid-cols-3 gap-2' :
+                            'grid grid-cols-2 gap-2'
+                          }`}>
+                            {post.imageUrls.slice(0, 4).map((url, idx) => (
+                              <div key={idx} className={`relative overflow-hidden rounded-lg bg-gray-100 ${
+                                post.imageUrls.length === 1 ? 'aspect-video' :
+                                post.imageUrls.length === 3 && idx === 0 ? 'col-span-2 row-span-2 aspect-square' :
+                                'aspect-square'
+                              }`}>
+                                <img 
+                                  src={url} 
+                                  alt={`Post image ${idx + 1}`}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+                                />
+                                {idx === 3 && post.imageUrls.length > 4 && (
+                                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                    <span className="text-white text-2xl font-bold">+{post.imageUrls.length - 4}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Post Actions */}
                         <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
@@ -504,6 +544,18 @@ export default function HomePage() {
                       </div>
                     ))}
 
+                    {/* Create Post Button */}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        console.log(`Create post in event ${event.id}`)
+                      }}
+                      className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl text-sm font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Your Post
+                    </button>
+
                     {/* View More in Event Page */}
                     {event.totalPosts > 3 && (
                       <button 
@@ -520,34 +572,6 @@ export default function HomePage() {
             </div>
           )
         })}
-
-        {/* Quick Create Event (Admin Only) */}
-        <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-5 border-2 border-blue-200 mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h4 className="text-lg font-black text-gray-900 mb-0.5">Create New Event</h4>
-              <p className="text-xs text-gray-600">Organize campus activities and start discussions</p>
-            </div>
-            <button className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-bold hover:shadow-lg transition-all flex items-center gap-2 text-sm">
-              <Plus className="h-4 w-4" />
-              Create
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="bg-white p-3 rounded-lg border border-gray-300 hover:border-blue-400 transition-all cursor-pointer">
-              <div className="font-bold text-gray-900 mb-0.5">Organization</div>
-              <div className="text-gray-600">Club activities</div>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-gray-300 hover:border-blue-400 transition-all cursor-pointer">
-              <div className="font-bold text-gray-900 mb-0.5">Department</div>
-              <div className="text-gray-600">Class seminars</div>
-            </div>
-            <div className="bg-white p-3 rounded-lg border border-gray-300 hover:border-blue-400 transition-all cursor-pointer">
-              <div className="font-bold text-gray-900 mb-0.5">Announcement</div>
-              <div className="text-gray-600">Official updates</div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )
