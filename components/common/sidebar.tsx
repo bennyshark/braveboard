@@ -12,28 +12,46 @@ import {
   FileText,
   User,
   Bookmark,
-  LogOut
+  LogOut,
+  Shield,
+  Upload
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 
 export default function Sidebar() {
-  const [activeItem, setActiveItem] = useState("home")
   const [userProfile, setUserProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
   const router = useRouter()
+  const pathname = usePathname()
 
-  const menuItems = [
-    { id: "home", label: "Home", icon: Home },
-    { id: "calendar", label: "Calendar", icon: Calendar },
-    { id: "gallery", label: "Gallery", icon: Image },
-    { id: "messages", label: "Messages", icon: MessageSquare },
-    { id: "research", label: "Research", icon: FileText },
-    { id: "departments", label: "Departments", icon: Briefcase },
-    { id: "organizations", label: "Organizations", icon: Users },
+  // Base menu items for all users
+  const baseMenuItems = [
+    { id: "home", label: "Home", icon: Home, path: "/home" },
+    { id: "calendar", label: "Calendar", icon: Calendar, path: "/calendar" },
+    { id: "gallery", label: "Gallery", icon: Image, path: "/gallery" },
+    { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
+    { id: "research", label: "Research", icon: FileText, path: "/research" },
+    { id: "departments", label: "Departments", icon: Briefcase, path: "/departments" },
+    { id: "organizations", label: "Organizations", icon: Users, path: "/organizations" },
   ]
+
+  // Admin menu items (only shown to admins)
+  const adminMenuItems = [
+    { id: "admin", label: "Admin", icon: Shield, path: "/admin/import-profiles" }
+  ]
+
+  // Combine menu items based on user role
+  const getMenuItems = () => {
+    if (userProfile?.role === 'admin') {
+      return [...baseMenuItems, ...adminMenuItems]
+    }
+    return baseMenuItems
+  }
+
+  const menuItems = getMenuItems()
 
   useEffect(() => {
     fetchUserProfile()
@@ -65,6 +83,15 @@ export default function Sidebar() {
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push("/signin")
+  }
+
+  const handleNavigation = (path: string) => {
+    router.push(path)
+  }
+
+  // Check if a menu item is active
+  const isActive = (path: string) => {
+    return pathname === path || pathname?.startsWith(path)
   }
 
   // Generate initials: first name + first letter of last name
@@ -119,22 +146,25 @@ export default function Sidebar() {
             <div className="space-y-1.5">
               {menuItems.map((item) => {
                 const Icon = item.icon
-                const isActive = activeItem === item.id
+                const active = isActive(item.path)
                 
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveItem(item.id)}
+                    onClick={() => handleNavigation(item.path)}
                     className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
-                      isActive
+                      active
                         ? "bg-white border-2 border-stone-100 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] text-blue-700"
                         : "text-stone-600 hover:bg-stone-50 hover:text-stone-900 border-2 border-transparent"
                     }`}
                   >
                     <Icon className={`h-5 w-5 transition-colors ${
-                      isActive ? "text-blue-500 fill-blue-50" : "text-stone-400 group-hover:text-stone-600"
+                      active ? "text-blue-500 fill-blue-50" : "text-stone-400 group-hover:text-stone-600"
                     }`} />
                     <span className="font-semibold text-sm">{item.label}</span>
+                    {item.id === "admin" && (
+                      <div className="ml-auto h-2 w-2 rounded-full bg-blue-500" />
+                    )}
                   </button>
                 )
               })}
@@ -149,16 +179,24 @@ export default function Sidebar() {
 
             <div className="space-y-1.5">
               <button 
-                onClick={() => setActiveItem("profile")}
-                className="w-full flex items-center gap-3 px-4 py-3 text-stone-600 hover:bg-stone-50 rounded-2xl transition-colors"
+                onClick={() => handleNavigation("/profile")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-colors ${
+                  isActive("/profile") 
+                    ? "bg-white border-2 border-stone-100 shadow-sm text-blue-700" 
+                    : "text-stone-600 hover:bg-stone-50"
+                }`}
               >
                 <User className="h-5 w-5 text-stone-400" />
                 <span className="font-semibold text-sm">Profile</span>
               </button>
 
               <button 
-                onClick={() => setActiveItem("settings")}
-                className="w-full flex items-center gap-3 px-4 py-3 text-stone-600 hover:bg-stone-50 rounded-2xl transition-colors"
+                onClick={() => handleNavigation("/settings")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-colors ${
+                  isActive("/settings") 
+                    ? "bg-white border-2 border-stone-100 shadow-sm text-blue-700" 
+                    : "text-stone-600 hover:bg-stone-50"
+                }`}
               >
                 <Settings className="h-5 w-5 text-stone-400" />
                 <span className="font-semibold text-sm">Settings</span>
@@ -178,15 +216,31 @@ export default function Sidebar() {
         {/* User Profile Footer - Card Style */}
         <div className="pt-4 mt-2">
           <div className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-stone-100 shadow-sm cursor-pointer hover:border-blue-200 transition-colors">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-300 to-orange-500 flex items-center justify-center shadow-inner">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center shadow-inner ${
+              userProfile?.role === 'admin' 
+                ? 'bg-gradient-to-br from-purple-400 to-purple-600' 
+                : 'bg-gradient-to-br from-orange-300 to-orange-500'
+            }`}>
               <span className="text-white font-bold text-sm">
                 {loading ? "..." : getInitials()}
               </span>
+              {userProfile?.role === 'admin' && (
+                <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center">
+                  <Shield className="h-2 w-2 text-white" />
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-stone-800 text-sm truncate">
-                {loading ? "Loading..." : getDisplayName()}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="font-bold text-stone-800 text-sm truncate">
+                  {loading ? "Loading..." : getDisplayName()}
+                </p>
+                {userProfile?.role === 'admin' && (
+                  <span className="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded font-medium">
+                    Admin
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-stone-500 truncate">
                 {loading ? "..." : getDepartment()}
               </p>
