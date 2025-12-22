@@ -7,7 +7,6 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get("code")
 
   if (!code) {
-    // No code means something went wrong with OAuth
     return NextResponse.redirect(new URL("/signin?error=1", requestUrl.origin))
   }
 
@@ -21,11 +20,46 @@ export async function GET(request: Request) {
     const email = data.user?.email
     
     if (email && !email.endsWith("@firstasia.edu.ph")) {
-      // Sign out the user
       await supabase.auth.signOut()
-      
-      // Redirect to signin with error
       return NextResponse.redirect(new URL("/signin?error=1", requestUrl.origin))
+    }
+
+    // Sync profile data on login
+    if (data.user) {
+      // Check if profile exists for this email
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle()
+      
+      if (existingProfile) {
+        // Update existing profile with user id
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({
+            id: data.user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq("email", email)
+        
+        if (updateError) {
+          console.error("Profile update error:", updateError)
+        }
+      } else {
+        // Create new profile for user
+        const { error: insertError } = await supabase
+          .from("profiles")
+          .insert({
+            id: data.user.id,
+            email: data.user.email,
+            role: "user"
+          })
+        
+        if (insertError) {
+          console.error("Profile creation error:", insertError)
+        }
+      }
     }
 
     // Success - redirect to home
