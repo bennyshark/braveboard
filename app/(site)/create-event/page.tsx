@@ -3,25 +3,24 @@
 import { 
   Globe, 
   Users, 
-  GraduationCap,
-  Building2,
-  Plus, 
-  Image, 
+  GraduationCap, 
+  Building2, 
   Calendar, 
   MapPin, 
   Tag,
   X,
-  Check,
   Lock,
-  Unlock,
-  Shield,
+  Shield, 
   ArrowLeft,
   Save,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { createBrowserClient } from "@supabase/ssr"
 
+// Define Database Types
 type Organization = {
   id: string
   code: string
@@ -42,12 +41,22 @@ type Course = {
 export default function CreateEventPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // Initialize Supabase Client (SSR compliant)
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
+  // User State
+  const [userId, setUserId] = useState<string | null>(null)
   
   // User's organizations where they can create events (officer/admin)
   const [userOrgs, setUserOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   
-  // Available options for visibility
+  // Available options
   const [departments, setDepartments] = useState<Department[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
@@ -64,91 +73,84 @@ export default function CreateEventPage() {
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   
-  const [visibilityType, setVisibilityType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
+  // Participant / Visibility
+  const [participantType, setParticipantType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([])
   const [selectedDepts, setSelectedDepts] = useState<string[]>([])
   const [selectedCourses, setSelectedCourses] = useState<string[]>([])
   
-  const [restrictPosting, setRestrictPosting] = useState(false)
+  // Posting Settings
+  const [whoCanPost, setWhoCanPost] = useState<'everyone' | 'officers'>('everyone')
+  
+  // Posting Duration
+  const [postingOpenUntil, setPostingOpenUntil] = useState('') 
+  const [enableExtendedPosting, setEnableExtendedPosting] = useState(false)
+
   const [isPinned, setIsPinned] = useState(false)
 
-  // Simulated data fetch - Replace with actual Supabase calls
+  // Load Initial Data
   useEffect(() => {
     async function loadData() {
       try {
-        // TODO: Replace with actual Supabase queries
+        // 1. Get Current User
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
         
-        // Check if user is FAITH admin
-        // const { data: profile } = await supabase
-        //   .from('profiles')
-        //   .select('role')
-        //   .eq('id', user.id)
-        //   .single()
-        // setIsFaithAdmin(profile?.role === 'admin')
-        
-        setIsFaithAdmin(true) // Mock: user is admin
-        
-        // Get user's organizations where they're officer/admin
-        // const { data: memberships } = await supabase
-        //   .from('organization_members')
-        //   .select(`
-        //     role,
-        //     organization:organizations(id, code, name)
-        //   `)
-        //   .eq('user_id', user.id)
-        //   .in('role', ['officer', 'admin'])
-        
-        // IMPORTANT: Only include organizations where user has officer or admin role
-        const allMemberships = [
-          { id: 'lighthouse', code: 'LH', name: 'Lighthouse', role: 'admin' },
-          { id: 'fec', code: 'FEC', name: 'FAITH Esports Club', role: 'officer' },
-          { id: 'sc', code: 'SC', name: 'Student Council', role: '' }, // No role - should be filtered out
-          { id: 'dsc', code: 'DSC', name: 'Developer Student Club', role: 'member' }, // Just member - should be filtered out
-        ]
-        
-        // Filter to only include officer/admin roles
-        const filteredOrgs = allMemberships.filter(org => 
-          org.role === 'officer' || org.role === 'admin'
-        )
-        
-        setUserOrgs(filteredOrgs)
-        
-        // Load departments
-        // const { data: depts } = await supabase.from('departments').select('*')
-        setDepartments([
-          { code: 'CCIT', name: 'College of Computer and Information Technology' },
-          { code: 'CBA', name: 'College of Business Administration' },
-          { code: 'COE', name: 'College of Engineering' },
-          { code: 'CAS', name: 'College of Arts and Sciences' }
-        ])
-        
-        // Load courses
-        // const { data: crses } = await supabase.from('courses').select('*')
-        setCourses([
-          { code: 'BSCS', name: 'BS Computer Science' },
-          { code: 'BSIT', name: 'BS Information Technology' },
-          { code: 'BSA', name: 'BS Accountancy' },
-          { code: 'BSBA', name: 'BS Business Administration' },
-          { code: 'BSCE', name: 'BS Civil Engineering' },
-          { code: 'BSPsych', name: 'BS Psychology' }
-        ])
-        
-        // Load all organizations
-        // const { data: allOrgs } = await supabase.from('organizations').select('*')
-        setAllOrganizations([
-          { id: 'fec', code: 'FEC', name: 'FAITH Esports Club', role: '' },
-          { id: 'lighthouse', code: 'LH', name: 'Lighthouse', role: '' },
-          { id: 'sc', code: 'SC', name: 'Student Council', role: '' },
-          { id: 'dsc', code: 'DSC', name: 'Developer Student Club', role: '' },
-          { id: 'acm', code: 'ACM', name: 'ACM Student Chapter', role: '' }
-        ])
-        
-        // Set default creator org if user has orgs
-        if (filteredOrgs.length > 0) {
-          setSelectedCreatorOrg(filteredOrgs[0].id)
-          setCreatorType('organization')
+        if (userError || !user) {
+          router.push('/login') // Redirect if not logged in
+          return
         }
+        setUserId(user.id)
+
+        // 2. Check if FAITH Admin (using profiles table)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
         
+        const isAdmin = profile?.role === 'admin'
+        setIsFaithAdmin(isAdmin)
+
+        // 3. Get User's Organizations (Officer/Admin roles only)
+        // We use the junction table logic here
+        const { data: memberships } = await supabase
+          .from('user_organizations')
+          .select(`
+            role,
+            organization:organizations(id, code, name)
+          `)
+          .eq('user_id', user.id)
+          .in('role', ['officer', 'admin'])
+
+        const formattedOrgs: Organization[] = memberships?.map((m: any) => ({
+          id: m.organization.id,
+          code: m.organization.code,
+          name: m.organization.name,
+          role: m.role
+        })) || []
+
+        setUserOrgs(formattedOrgs)
+
+        // 4. Load Reference Data (Departments, Courses, All Orgs)
+        const [deptRes, courseRes, orgRes] = await Promise.all([
+          supabase.from('departments').select('code, name'),
+          supabase.from('courses').select('code, name'),
+          supabase.from('organizations').select('id, code, name')
+        ])
+
+        if (deptRes.data) setDepartments(deptRes.data)
+        if (courseRes.data) setCourses(courseRes.data)
+        if (orgRes.data) setAllOrganizations(orgRes.data.map((o: any) => ({ ...o, role: '' })))
+
+        // 5. Default Defaults
+        // If user is NOT admin but HAS orgs, default to the first org
+        if (!isAdmin && formattedOrgs.length > 0) {
+          setCreatorType('organization')
+          setSelectedCreatorOrg(formattedOrgs[0].id)
+          setParticipantType('organization')
+          setSelectedOrgs([formattedOrgs[0].id])
+        }
+
       } catch (error) {
         console.error('Error loading data:', error)
       } finally {
@@ -157,7 +159,18 @@ export default function CreateEventPage() {
     }
     
     loadData()
-  }, [])
+  }, [router, supabase])
+
+  // Auto-update participants when creator organization changes
+  useEffect(() => {
+    if (creatorType === 'organization' && selectedCreatorOrg) {
+      if (participantType === 'organization' || participantType === 'mixed') {
+        if (!selectedOrgs.includes(selectedCreatorOrg)) {
+          setSelectedOrgs(prev => [...prev, selectedCreatorOrg])
+        }
+      }
+    }
+  }, [creatorType, selectedCreatorOrg, participantType, selectedOrgs])
 
   const addTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
@@ -179,7 +192,9 @@ export default function CreateEventPage() {
   }
 
   const handleSubmit = async () => {
-    // Validation
+    if (!userId) return
+
+    // --- Validation ---
     if (!title.trim()) {
       alert('Please enter an event title')
       return
@@ -189,55 +204,92 @@ export default function CreateEventPage() {
       alert('Please select an organization')
       return
     }
+
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates')
+      return
+    }
     
-    if (visibilityType !== 'public') {
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    
+    if (start >= end) {
+      alert('Start date must be earlier than the end date')
+      return
+    }
+    
+    if (participantType !== 'public') {
       const hasSelection = selectedOrgs.length > 0 || selectedDepts.length > 0 || selectedCourses.length > 0
       if (!hasSelection) {
-        alert('Please select at least one organization, department, or course')
+        alert('Please select at least one organization, department, or course for participation')
         return
       }
     }
     
-    // Prepare event data
-    const eventData = {
-      title: title.trim(),
-      description: description.trim(),
-      creator_type: creatorType,
-      creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
-      start_date: startDate || null,
-      end_date: endDate || null,
-      location: location.trim() || null,
-      tags,
-      visibility_type: visibilityType,
-      visibility_orgs: selectedOrgs,
-      visibility_depts: selectedDepts,
-      visibility_courses: selectedCourses,
-      posting_restricted: restrictPosting, // If true, only officers/admins can post
-      is_pinned: isPinned && isFaithAdmin, // Only admins can pin
+    let finalPostingDate = null
+    if (enableExtendedPosting && postingOpenUntil) {
+      const postingEnd = new Date(postingOpenUntil)
+      if (postingEnd <= start) {
+         alert('Posting deadline must be after the event starts')
+         return
+      }
+      finalPostingDate = postingOpenUntil
     }
-    
-    console.log('Creating event:', eventData)
-    
-    // TODO: Replace with actual Supabase insert
-    // const { data, error } = await supabase
-    //   .from('events')
-    //   .insert(eventData)
-    //   .select()
-    //   .single()
-    
-    // if (error) {
-    //   alert('Error creating event: ' + error.message)
-    //   return
-    // }
-    
-    alert('Event created successfully!')
-    router.push('/home')
+
+    // --- Submission ---
+    setIsSubmitting(true)
+
+    try {
+      const eventData = {
+        title: title.trim(),
+        description: description.trim(),
+        created_by: userId, // Important: explicitly set creator
+        creator_type: creatorType,
+        creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
+        start_date: startDate,
+        end_date: endDate,
+        location: location.trim() || null,
+        tags: tags,
+        // Participant Mappings
+        participant_type: participantType,
+        participant_orgs: selectedOrgs,
+        participant_depts: selectedDepts,
+        participant_courses: selectedCourses,
+        // Permissions
+        who_can_post: whoCanPost,
+        posting_open_until: finalPostingDate,
+        // Meta
+        is_pinned: isPinned && isFaithAdmin, 
+      }
+
+      console.log('Submitting to DB:', eventData)
+
+      const { data, error } = await supabase
+        .from('events')
+        .insert(eventData)
+        .select()
+        .single()
+
+      if (error) {
+        throw error
+      }
+
+      // Success
+      alert('Event created successfully!')
+      router.push('/home') // Or wherever you want to redirect
+
+    } catch (error: any) {
+      console.error('Error creating event:', error)
+      alert(`Failed to create event: ${error.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto py-10 px-4">
-        <div className="text-center">Loading...</div>
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
       </div>
     )
   }
@@ -259,7 +311,7 @@ export default function CreateEventPage() {
 
       <div className="space-y-6">
         
-        {/* Creator Selection - Show dropdown if user has multiple organizations OR is FAITH admin */}
+        {/* Creator Selection */}
         {(isFaithAdmin || userOrgs.length > 0) && (
           <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
             <label className="block text-sm font-bold text-gray-900 mb-3">
@@ -294,6 +346,14 @@ export default function CreateEventPage() {
                     onChange={() => {
                       setCreatorType('organization')
                       setSelectedCreatorOrg(org.id)
+                      // Auto-select this org in participants if not public
+                      if (participantType !== 'public') {
+                        setParticipantType('organization')
+                        // Only add if not already there
+                        if(!selectedOrgs.includes(org.id)) {
+                           setSelectedOrgs(prev => [...prev, org.id])
+                        }
+                      }
                     }}
                     className="w-4 h-4"
                   />
@@ -344,7 +404,7 @@ export default function CreateEventPage() {
             <div>
               <label className="block text-sm font-bold text-gray-900 mb-2">
                 <Calendar className="inline h-4 w-4 mr-1" />
-                Start Date
+                Start Date *
               </label>
               <input
                 type="datetime-local"
@@ -356,7 +416,7 @@ export default function CreateEventPage() {
             <div>
               <label className="block text-sm font-bold text-gray-900 mb-2">
                 <Calendar className="inline h-4 w-4 mr-1" />
-                End Date
+                End Date *
               </label>
               <input
                 type="datetime-local"
@@ -366,6 +426,13 @@ export default function CreateEventPage() {
               />
             </div>
           </div>
+          {/* Validation Feedback */}
+          {startDate && endDate && new Date(startDate) >= new Date(endDate) && (
+             <div className="text-red-600 text-sm flex items-center gap-1 font-bold">
+               <AlertCircle className="h-4 w-4" />
+               Start date must be earlier than end date.
+             </div>
+          )}
 
           <div>
             <label className="block text-sm font-bold text-gray-900 mb-2">
@@ -416,15 +483,15 @@ export default function CreateEventPage() {
           </div>
         </div>
 
-        {/* Visibility Settings */}
+        {/* Participants */}
         <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
           <div className="flex items-start gap-3 mb-4">
-            <h3 className="text-lg font-black text-gray-900 flex-1">Event Visibility</h3>
+            <h3 className="text-lg font-black text-gray-900 flex-1">Event Participants</h3>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
               <div className="flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div className="text-blue-800">
-                  <strong>Note:</strong> Selected users/groups will be able to see and participate in this event
+                  <strong>Definition:</strong> Participants are people who can see the event and potentially post in it (depending on permissions).
                 </div>
               </div>
             </div>
@@ -434,16 +501,16 @@ export default function CreateEventPage() {
             <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
               <input
                 type="radio"
-                name="visibility"
-                checked={visibilityType === 'public'}
-                onChange={() => setVisibilityType('public')}
+                name="participant"
+                checked={participantType === 'public'}
+                onChange={() => setParticipantType('public')}
                 className="w-4 h-4"
               />
               <div className="flex items-center gap-2">
                 <Globe className="h-5 w-5 text-blue-600" />
                 <div>
                   <div className="font-bold text-gray-900">Public</div>
-                  <div className="text-xs text-gray-600">All FAITH students can see and participate</div>
+                  <div className="text-xs text-gray-600">All FAITH students are participants</div>
                 </div>
               </div>
             </label>
@@ -451,16 +518,16 @@ export default function CreateEventPage() {
             <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
               <input
                 type="radio"
-                name="visibility"
-                checked={visibilityType === 'organization'}
-                onChange={() => setVisibilityType('organization')}
+                name="participant"
+                checked={participantType === 'organization'}
+                onChange={() => setParticipantType('organization')}
                 className="w-4 h-4"
               />
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-orange-600" />
                 <div>
                   <div className="font-bold text-gray-900">By Organization</div>
-                  <div className="text-xs text-gray-600">Select specific organizations</div>
+                  <div className="text-xs text-gray-600">Only members of selected organizations</div>
                 </div>
               </div>
             </label>
@@ -468,16 +535,16 @@ export default function CreateEventPage() {
             <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
               <input
                 type="radio"
-                name="visibility"
-                checked={visibilityType === 'department'}
-                onChange={() => setVisibilityType('department')}
+                name="participant"
+                checked={participantType === 'department'}
+                onChange={() => setParticipantType('department')}
                 className="w-4 h-4"
               />
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-green-600" />
                 <div>
                   <div className="font-bold text-gray-900">By Department</div>
-                  <div className="text-xs text-gray-600">Select specific departments</div>
+                  <div className="text-xs text-gray-600">Only students in selected departments</div>
                 </div>
               </div>
             </label>
@@ -485,16 +552,16 @@ export default function CreateEventPage() {
             <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
               <input
                 type="radio"
-                name="visibility"
-                checked={visibilityType === 'course'}
-                onChange={() => setVisibilityType('course')}
+                name="participant"
+                checked={participantType === 'course'}
+                onChange={() => setParticipantType('course')}
                 className="w-4 h-4"
               />
               <div className="flex items-center gap-2">
                 <GraduationCap className="h-5 w-5 text-purple-600" />
                 <div>
                   <div className="font-bold text-gray-900">By Course</div>
-                  <div className="text-xs text-gray-600">Select specific courses</div>
+                  <div className="text-xs text-gray-600">Only students in selected courses</div>
                 </div>
               </div>
             </label>
@@ -502,9 +569,9 @@ export default function CreateEventPage() {
             <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
               <input
                 type="radio"
-                name="visibility"
-                checked={visibilityType === 'mixed'}
-                onChange={() => setVisibilityType('mixed')}
+                name="participant"
+                checked={participantType === 'mixed'}
+                onChange={() => setParticipantType('mixed')}
                 className="w-4 h-4"
               />
               <div className="flex items-center gap-2">
@@ -518,10 +585,10 @@ export default function CreateEventPage() {
           </div>
 
           {/* Organization Selection */}
-          {(visibilityType === 'organization' || visibilityType === 'mixed') && (
+          {(participantType === 'organization' || participantType === 'mixed') && (
             <div className="mt-4 p-4 bg-orange-50 border-2 border-orange-200 rounded-lg">
               <label className="block text-sm font-bold text-gray-900 mb-3">
-                Select Organizations:
+                Select Participant Organizations:
               </label>
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {allOrganizations.map(org => (
@@ -533,6 +600,9 @@ export default function CreateEventPage() {
                       className="w-4 h-4"
                     />
                     <span className="text-sm font-medium">{org.name}</span>
+                    {creatorType === 'organization' && selectedCreatorOrg === org.id && (
+                        <span className="text-xs bg-orange-200 px-2 rounded-full text-orange-800 font-bold">Host</span>
+                    )}
                   </label>
                 ))}
               </div>
@@ -540,7 +610,7 @@ export default function CreateEventPage() {
           )}
 
           {/* Department Selection */}
-          {(visibilityType === 'department' || visibilityType === 'mixed') && (
+          {(participantType === 'department' || participantType === 'mixed') && (
             <div className="mt-4 p-4 bg-green-50 border-2 border-green-200 rounded-lg">
               <label className="block text-sm font-bold text-gray-900 mb-3">
                 Select Departments:
@@ -562,7 +632,7 @@ export default function CreateEventPage() {
           )}
 
           {/* Course Selection */}
-          {(visibilityType === 'course' || visibilityType === 'mixed') && (
+          {(participantType === 'course' || participantType === 'mixed') && (
             <div className="mt-4 p-4 bg-purple-50 border-2 border-purple-200 rounded-lg">
               <label className="block text-sm font-bold text-gray-900 mb-3">
                 Select Courses:
@@ -584,54 +654,102 @@ export default function CreateEventPage() {
           )}
         </div>
 
-        {/* Post Permissions */}
+        {/* Posting Duration */}
         <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
-          <h3 className="text-lg font-black text-gray-900 mb-4">Post Permissions</h3>
+          <h3 className="text-lg font-black text-gray-900 mb-4">Posting Duration</h3>
           
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-800">
-                <strong>By default:</strong> All participants (users who can see this event) can create posts. You can restrict this below.
-              </div>
-            </div>
-          </div>
-
           <label className="flex items-start gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-            <input
-              type="checkbox"
-              checked={restrictPosting}
-              onChange={(e) => setRestrictPosting(e.target.checked)}
-              className="w-5 h-5 mt-0.5"
-            />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <Lock className="h-5 w-5 text-red-600" />
-                <div className="font-bold text-gray-900">Restrict posting to officers/admins only</div>
-              </div>
-              <div className="text-xs text-gray-600">
-                When checked, only officers and admins of the organizing entity can create posts. Regular participants can still view and comment.
-              </div>
-            </div>
+             <input 
+               type="checkbox"
+               checked={!enableExtendedPosting}
+               onChange={() => {
+                 setEnableExtendedPosting(false)
+                 setPostingOpenUntil('') 
+               }}
+               className="w-5 h-5 mt-0.5"
+             />
+             <div>
+               <div className="font-bold text-gray-900">Standard Duration</div>
+               <div className="text-xs text-gray-600">
+                  Users can post from the start date until the event <strong>End Date ({endDate ? new Date(endDate).toLocaleString() : '...'})</strong>.
+               </div>
+             </div>
           </label>
 
-          {!restrictPosting && (
-            <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <Unlock className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-green-800">
-                <strong>Open posting enabled:</strong> All event participants can create posts and engage in discussions.
-              </div>
-            </div>
-          )}
+          <label className="flex items-start gap-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+             <input 
+               type="checkbox"
+               checked={enableExtendedPosting}
+               onChange={() => setEnableExtendedPosting(true)}
+               className="w-5 h-5 mt-0.5"
+             />
+             <div className="w-full">
+               <div className="font-bold text-gray-900">Extended / Custom Posting Window</div>
+               <div className="text-xs text-gray-600 mb-3">
+                  Allow users to keep posting even after the event has technically finished.
+               </div>
+               
+               {enableExtendedPosting && (
+                 <div className="mt-2">
+                   <label className="block text-xs font-bold text-gray-700 mb-1">Close posting on:</label>
+                   <input
+                    type="datetime-local"
+                    value={postingOpenUntil}
+                    onChange={(e) => setPostingOpenUntil(e.target.value)}
+                    className="w-full px-3 py-2 border-2 border-blue-300 rounded bg-white text-sm"
+                   />
+                   <p className="text-xs text-gray-500 mt-1">
+                     You can update this date or reopen posting at any time in the future.
+                   </p>
+                 </div>
+               )}
+             </div>
+          </label>
+        </div>
 
-          {restrictPosting && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <Lock className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-red-800">
-                <strong>Restricted posting:</strong> Only you and other officers/admins can create posts. Regular participants can view and comment only.
-              </div>
-            </div>
-          )}
+        {/* Post Permissions */}
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
+          <h3 className="text-lg font-black text-gray-900 mb-4">Who can post?</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className={`flex flex-col gap-2 p-4 border-2 rounded-xl cursor-pointer transition-all ${whoCanPost === 'everyone' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-200'}`}>
+               <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                     <Users className="h-5 w-5 text-green-600" />
+                     <span className="font-bold text-gray-900">All Participants</span>
+                  </div>
+                  <input 
+                    type="radio" 
+                    name="permission" 
+                    checked={whoCanPost === 'everyone'}
+                    onChange={() => setWhoCanPost('everyone')}
+                    className="w-4 h-4"
+                  />
+               </div>
+               <p className="text-xs text-gray-600">
+                 Anyone included in the participants list can create posts.
+               </p>
+            </label>
+
+            <label className={`flex flex-col gap-2 p-4 border-2 rounded-xl cursor-pointer transition-all ${whoCanPost === 'officers' ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-red-200'}`}>
+               <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                     <Lock className="h-5 w-5 text-red-600" />
+                     <span className="font-bold text-gray-900">Admins & Officers Only</span>
+                  </div>
+                  <input 
+                    type="radio" 
+                    name="permission" 
+                    checked={whoCanPost === 'officers'}
+                    onChange={() => setWhoCanPost('officers')}
+                    className="w-4 h-4"
+                  />
+               </div>
+               <p className="text-xs text-gray-600">
+                 Participants can view, but only you and your officers can create new posts.
+               </p>
+            </label>
+          </div>
         </div>
 
         {/* Admin Options */}
@@ -662,17 +780,28 @@ export default function CreateEventPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex-1 py-4 bg-white border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+            disabled={isSubmitting}
+            className="flex-1 py-4 bg-white border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSubmit}
-            className="flex-1 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
+            disabled={isSubmitting}
+            className="flex-1 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            <Save className="h-5 w-5" />
-            Create Event
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Save className="h-5 w-5" />
+                Create Event
+              </>
+            )}
           </button>
         </div>
       </div>
