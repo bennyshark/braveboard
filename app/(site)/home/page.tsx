@@ -20,16 +20,93 @@ import {
   Pin,
   Eye,
   EyeOff,
-  ArrowRight
+  ArrowRight,
+  Shield,
+  ChevronDown
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
+
+type Organization = {
+  id: string
+  code: string
+  name: string
+  role: string
+}
 
 export default function HomePage() {
+  const router = useRouter()
   const [activeFeedFilter, setActiveFeedFilter] = useState("feed")
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedAnnouncementSource, setSelectedAnnouncementSource] = useState<string | null>("all")
   const [hiddenEvents, setHiddenEvents] = useState<Set<number>>(new Set())
   const [searchTerm, setSearchTerm] = useState("")
+  
+  // Create Event Dropdown
+  const [showCreateDropdown, setShowCreateDropdown] = useState(false)
+  const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
+  const [isFaithAdmin, setIsFaithAdmin] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowCreateDropdown(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Load user's organizations where they can create events
+  useEffect(() => {
+    async function loadUserCreateOrgs() {
+      try {
+        // TODO: Replace with actual Supabase queries
+        
+        // Check if user is FAITH admin
+        // const { data: profile } = await supabase
+        //   .from('profiles')
+        //   .select('role')
+        //   .eq('id', user.id)
+        //   .single()
+        // setIsFaithAdmin(profile?.role === 'admin')
+        
+        setIsFaithAdmin(true) // Mock: user is admin
+        
+        // Get user's organizations where they're officer/admin
+        // const { data: memberships } = await supabase
+        //   .from('organization_members')
+        //   .select(`
+        //     role,
+        //     organization:organizations(id, code, name)
+        //   `)
+        //   .eq('user_id', user.id)
+        //   .in('role', ['officer', 'admin'])
+        
+        // IMPORTANT: Only include organizations where user has officer or admin role
+        const allMemberships = [
+          { id: 'lighthouse', code: 'LH', name: 'Lighthouse', role: 'admin' },
+          { id: 'fec', code: 'FEC', name: 'FAITH Esports Club', role: 'officer' },
+          { id: 'sc', code: 'SC', name: 'Student Council', role: '' }, // No role - should be filtered out
+          { id: 'dsc', code: 'DSC', name: 'Developer Student Club', role: 'member' }, // Just member - should be filtered out
+        ]
+        
+        // Filter to only include officer/admin roles
+        const filteredOrgs = allMemberships.filter(org => 
+          org.role === 'officer' || org.role === 'admin'
+        )
+        
+        setUserCreateOrgs(filteredOrgs)
+      } catch (error) {
+        console.error('Error loading user organizations:', error)
+      }
+    }
+    
+    loadUserCreateOrgs()
+  }, [])
 
   const feedFilters = [
     { id: "feed", label: "Campus Feed", icon: Globe, color: "blue" },
@@ -63,6 +140,8 @@ export default function HomePage() {
       date: "Mar 15-20",
       tags: ["Public", "All Students", "Exams"],
       visibility: "All Departments",
+      visibilityType: "public",
+      postingRestricted: false, // All participants can post
       isPinned: true,
       participants: 245,
       totalPosts: 28,
@@ -106,6 +185,8 @@ export default function HomePage() {
       date: "Tomorrow",
       tags: ["Esports", "FEC", "CCIT Only"],
       visibility: "FEC Members & CCIT Students",
+      visibilityType: "mixed",
+      postingRestricted: true, // Only officers/admins can post
       isPinned: false,
       participants: 89,
       totalPosts: 15,
@@ -149,6 +230,8 @@ export default function HomePage() {
       date: "This Saturday",
       tags: ["Volunteer", "Environment", "All Students"],
       visibility: "All Departments",
+      visibilityType: "public",
+      postingRestricted: false, // All participants can post
       isPinned: false,
       participants: 67,
       totalPosts: 8,
@@ -221,6 +304,41 @@ export default function HomePage() {
     }
   }
 
+  const handleCreateClick = () => {
+    // If announcements tab, always create post (no dropdown needed)
+    if (activeFeedFilter === 'announcements') {
+      console.log('Create announcement post')
+      return
+    }
+    
+    // Check if user can create events
+    const canCreateMultiple = isFaithAdmin || userCreateOrgs.length > 0
+    const hasMultipleOptions = isFaithAdmin && userCreateOrgs.length > 0
+    
+    if (!canCreateMultiple) {
+      // User cannot create events at all
+      alert('You need to be an officer or admin of an organization to create events')
+      return
+    }
+    
+    // If user has only one option (either FAITH admin OR one org), go directly
+    if (!hasMultipleOptions) {
+      router.push('/create-event')
+      return
+    }
+    
+    // Show dropdown for multiple options
+    setShowCreateDropdown(!showCreateDropdown)
+  }
+
+  const handleCreateAsOption = (type: 'faith_admin' | 'organization', orgId?: string) => {
+    setShowCreateDropdown(false)
+    
+    // TODO: Pass the selected creator context to the create event page
+    // For now, just navigate
+    router.push('/create-event')
+  }
+
   return (
     <div className="max-w-5xl mx-auto pb-10 px-4">
       
@@ -261,14 +379,61 @@ export default function HomePage() {
             })}
           </div>
           
-          {/* Create Button */}
-          <button 
-            onClick={() => console.log('Create:', activeFeedFilter === 'announcements' ? 'post' : 'event')}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold text-sm whitespace-nowrap shadow-md hover:shadow-lg transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            {activeFeedFilter === 'announcements' ? 'Create Post' : 'Create Event'}
-          </button>
+          {/* Create Button with Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button 
+              onClick={handleCreateClick}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold text-sm whitespace-nowrap shadow-md hover:shadow-lg transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              {activeFeedFilter === 'announcements' ? 'Create Post' : 'Create Event'}
+              {activeFeedFilter !== 'announcements' && (isFaithAdmin && userCreateOrgs.length > 0) && (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </button>
+
+            {/* Dropdown Menu */}
+            {showCreateDropdown && activeFeedFilter !== 'announcements' && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl border-2 border-gray-200 shadow-xl z-50">
+                <div className="p-2">
+                  <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase">
+                    Create event as:
+                  </div>
+                  
+                  {isFaithAdmin && (
+                    <button
+                      onClick={() => handleCreateAsOption('faith_admin')}
+                      className="w-full flex items-center gap-3 px-3 py-3 hover:bg-purple-50 rounded-lg transition-colors text-left"
+                    >
+                      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+                        <Shield className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-gray-900 text-sm">FAITH Administration</div>
+                        <div className="text-xs text-gray-500">Campus-wide events</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {userCreateOrgs.map(org => (
+                    <button
+                      key={org.id}
+                      onClick={() => handleCreateAsOption('organization', org.id)}
+                      className="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 rounded-lg transition-colors text-left"
+                    >
+                      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
+                        <Users className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-gray-900 text-sm truncate">{org.name}</div>
+                        <div className="text-xs text-gray-500 capitalize">{org.role}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -394,12 +559,23 @@ export default function HomePage() {
                         <span>•</span>
                         <span className="flex items-center gap-1 font-medium">
                           <Users className="h-3 w-3" />
-                          {event.participants}
+                          {event.participants} participants
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1 font-medium">
                           <MessageCircle className="h-3 w-3" />
                           {event.totalPosts} posts
+                        </span>
+                      </div>
+
+                      {/* Posting Permission Badge */}
+                      <div className="mt-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold ${
+                          event.postingRestricted 
+                            ? 'bg-red-100 text-red-700' 
+                            : 'bg-green-100 text-green-700'
+                        }`}>
+                          {event.postingRestricted ? '🔒 Officers/Admins Only' : '✅ All Participants Can Post'}
                         </span>
                       </div>
 
