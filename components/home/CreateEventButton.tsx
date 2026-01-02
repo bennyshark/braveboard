@@ -26,7 +26,7 @@ export function CreateEventButton({ activeFeedFilter, isFaithAdmin, userCreateOr
   }, [])
 
   const handleCreateClick = () => {
-    if (activeFeedFilter === 'announcements') return // Logic for announcements
+    if (activeFeedFilter === 'announcements') return 
     
     const canCreateMultiple = isFaithAdmin || userCreateOrgs.length > 0
     const hasMultipleOptions = isFaithAdmin && userCreateOrgs.length > 0
@@ -36,8 +36,13 @@ export function CreateEventButton({ activeFeedFilter, isFaithAdmin, userCreateOr
       return
     }
     
+    // If only one option exists, go directly there with the correct params
     if (!hasMultipleOptions) {
-      router.push('/create-event')
+      if (isFaithAdmin) {
+        router.push('/create-event?type=faith_admin')
+      } else if (userCreateOrgs.length > 0) {
+        router.push(`/create-event?type=organization&orgId=${userCreateOrgs[0].id}`)
+      }
       return
     }
     
@@ -52,7 +57,7 @@ export function CreateEventButton({ activeFeedFilter, isFaithAdmin, userCreateOr
       >
         <Plus className="h-4 w-4" />
         {activeFeedFilter === 'announcements' ? 'Create Post' : 'Create Event'}
-        {activeFeedFilter !== 'announcements' && (isFaithAdmin && userCreateOrgs.length > 0) && (
+        {activeFeedFilter !== 'announcements' && (isFaithAdmin || userCreateOrgs.length > 0) && (
           <ChevronDown className="h-4 w-4" />
         )}
       </button>
@@ -64,7 +69,10 @@ export function CreateEventButton({ activeFeedFilter, isFaithAdmin, userCreateOr
             <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase">Create event as:</div>
             
             {isFaithAdmin && (
-              <button onClick={() => router.push('/create-event')} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-purple-50 rounded-lg transition-colors text-left">
+              <button 
+                onClick={() => router.push('/create-event?type=faith_admin')} 
+                className="w-full flex items-center gap-3 px-3 py-3 hover:bg-purple-50 rounded-lg transition-colors text-left"
+              >
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center flex-shrink-0">
                   <Shield className="h-4 w-4 text-white" />
                 </div>
@@ -75,7 +83,11 @@ export function CreateEventButton({ activeFeedFilter, isFaithAdmin, userCreateOr
             )}
 
             {userCreateOrgs.map(org => (
-              <button key={org.id} onClick={() => router.push('/create-event')} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 rounded-lg transition-colors text-left">
+              <button 
+                key={org.id} 
+                onClick={() => router.push(`/create-event?type=organization&orgId=${org.id}`)} 
+                className="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 rounded-lg transition-colors text-left"
+              >
                 <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
                   <Users className="h-4 w-4 text-white" />
                 </div>
