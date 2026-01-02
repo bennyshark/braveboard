@@ -14,11 +14,9 @@ import {
   ArrowLeft,
   Save,
   AlertCircle,
-  Loader2,
-  Eye,
-  EyeOff
+  Loader2
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react" // Added Suspense import
 import { useRouter, useSearchParams } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 
@@ -40,7 +38,8 @@ type Course = {
   name: string
 }
 
-export default function CreateEventPage() {
+// --- MAIN FORM COMPONENT (Renamed from CreateEventPage) ---
+function CreateEventForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   
@@ -50,7 +49,7 @@ export default function CreateEventPage() {
   
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
   // User State
@@ -194,22 +193,17 @@ export default function CreateEventPage() {
 
 
   // --- HANDLERS ---
-  
-  // FIXED: Auto-update participants when creator changes manually
   useEffect(() => {
     if (!dataLoaded) return
 
     if (creatorType === 'organization' && selectedCreatorOrg) {
-       // Only switch default participants if we are in a simple mode (public or single org)
        if (participantType === 'public' || participantType === 'organization') {
           setParticipantType('organization')
-          
-          // FIX: Directly set the list to ONLY the new creator.
-          // This clears out previous selections so they don't stack up.
-          setPartOrgs([selectedCreatorOrg]) 
+          if (!partOrgs.includes(selectedCreatorOrg)) {
+             setPartOrgs([selectedCreatorOrg]) // Reset list to just this org
+          }
        }
     } else if (creatorType === 'faith_admin') {
-       // If switching back to Admin, default to Public and clear orgs
        if (participantType === 'organization') {
           setParticipantType('public')
           setPartOrgs([])
@@ -509,5 +503,18 @@ export default function CreateEventPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// --- MAIN PAGE WRAPPER (REQUIRED FOR SUSPENSE) ---
+export default function CreateEventPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+      </div>
+    }>
+      <CreateEventForm />
+    </Suspense>
   )
 }
