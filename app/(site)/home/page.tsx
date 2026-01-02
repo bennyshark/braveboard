@@ -7,63 +7,95 @@ import { EventCard } from "@/components/feed/EventCard"
 import { CreateEventButton } from "@/components/home/CreateEventButton"
 import { FeedFilters } from "@/components/home/FeedFilters"
 
-// --- Mock Data ---
-// Added FAITH Admin as the first organization
-const MOCK_ORGS = [
-  { id: "faith_admin", code: "FAITH", name: "FAITH", role: "admin", members: 0 },
-  { id: "fec", code: "FEC", name: "FAITH Esports Club", role: "officer", members: 120 },
-  { id: "lighthouse", code: "LH", name: "Lighthouse", role: "admin", members: 85 },
-  { id: "sc", code: "SC", name: "Student Council", role: "", members: 45 },
-]
-
 export default function HomePage() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
+  // --- UI State ---
   const [activeFeedFilter, setActiveFeedFilter] = useState("feed")
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedAnnouncementSource, setSelectedAnnouncementSource] = useState<string | null>("all")
   const [hiddenEvents, setHiddenEvents] = useState<Set<string>>(new Set())
   const [searchTerm, setSearchTerm] = useState("")
   
+  // --- Data State ---
   const [events, setEvents] = useState<EventItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  
-  const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
+  const [allOrganizations, setAllOrganizations] = useState<Organization[]>([]) // For the Filter Bar
+  const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([]) // For the Create Button
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // 1. Fetch User Permissions
+  // 1. Fetch Data (User, Orgs, Events)
   useEffect(() => {
-    async function loadUserPermissions() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      setIsFaithAdmin(profile?.role === 'admin')
-
-      // Mock permissions for now
-      const validOrgs = MOCK_ORGS.filter(o => ['officer', 'admin'].includes(o.role) && o.id !== 'faith_admin')
-      setUserCreateOrgs(validOrgs)
-    }
-    loadUserPermissions()
-  }, [])
-
-  // 2. Fetch Events
-  useEffect(() => {
-    async function fetchEvents() {
+    async function loadData() {
       setIsLoading(true)
       try {
-        const { data, error } = await supabase
+        const { data: { user } } = await supabase.auth.getUser()
+
+        // --- A. Fetch User Permissions (If logged in) ---
+        if (user) {
+          // 1. Check Admin Status
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single()
+          
+          setIsFaithAdmin(profile?.role === 'admin')
+
+          // 2. Fetch User's Officer/Admin Memberships (For Create Button)
+          const { data: memberships } = await supabase
+            .from('user_organizations')
+            .select(`
+              role,
+              organization:organizations (id, code, name)
+            `)
+            .eq('user_id', user.id)
+            .in('role', ['officer', 'admin'])
+          
+          const validUserOrgs: Organization[] = memberships?.map((m: any) => ({
+            id: m.organization.id,
+            code: m.organization.code,
+            name: m.organization.name,
+            role: m.role
+          })) || []
+          
+          setUserCreateOrgs(validUserOrgs)
+        }
+
+        // --- B. Fetch All Organizations (For Filters) ---
+        const { data: orgsData, error: orgsError } = await supabase
+          .from('organizations')
+          .select('id, code, name, member_count')
+          .order('name')
+        
+        if (orgsError) throw orgsError
+
+        // Manually prepend "FAITH Administration" so it appears in the filter list
+        const fetchedOrgs: Organization[] = [
+          { id: "faith_admin", code: "FAITH", name: "FAITH Administration", role: "admin", members: 0 },
+          ...(orgsData?.map((o: any) => ({
+            id: o.id,
+            code: o.code,
+            name: o.name,
+            role: '', // Role doesn't matter for the public filter list
+            members: o.member_count
+          })) || [])
+        ]
+        setAllOrganizations(fetchedOrgs)
+
+        // --- C. Fetch Events ---
+        const { data: eventsData, error: eventsError } = await supabase
           .from('events')
           .select(`*, creator_org:organizations(name)`)
           .order('is_pinned', { ascending: false })
           .order('created_at', { ascending: false })
 
-        if (error) throw error
+        if (eventsError) throw eventsError
 
-        const mappedEvents: EventItem[] = data.map((row: any) => {
+        const mappedEvents: EventItem[] = eventsData.map((row: any) => {
           const start = new Date(row.start_date)
           const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           
@@ -73,7 +105,7 @@ export default function HomePage() {
           // Map types
           if (row.creator_type === 'faith_admin') {
             organizerName = "FAITH Administration"
-            organizerType = "faith" // Special type for color coding
+            organizerType = "faith" 
           } else if (row.creator_type === 'organization') {
             organizerName = row.creator_org?.name || "Organization"
             organizerType = "organization"
@@ -105,14 +137,15 @@ export default function HomePage() {
         })
 
         setEvents(mappedEvents)
+
       } catch (err) {
-        console.error("Error fetching events:", err)
+        console.error("Error loading home data:", err)
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchEvents()
+    loadData()
   }, [])
 
   const feedFilters = [
@@ -151,8 +184,12 @@ export default function HomePage() {
         if (selectedOrg === 'faith_admin') {
            return event.organizer.type === 'faith'
         }
-        // Handle standard Orgs by matching name (mock logic)
-        return event.organizer.name === MOCK_ORGS.find(o => o.id === selectedOrg)?.name
+        
+        // Handle standard Orgs:
+        // We find the org object in our fetched list to match the name
+        // (Since event.organizer.name is just a string from the join)
+        const targetOrgName = allOrganizations.find(o => o.id === selectedOrg)?.name
+        return event.organizer.name === targetOrgName
       }
       
       return true
@@ -211,7 +248,7 @@ export default function HomePage() {
 
       <FeedFilters 
         activeFilter={activeFeedFilter}
-        organizations={MOCK_ORGS}
+        organizations={allOrganizations} 
         selectedOrg={selectedOrg}
         setSelectedOrg={setSelectedOrg}
         searchTerm={searchTerm}

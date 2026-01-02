@@ -194,17 +194,22 @@ export default function CreateEventPage() {
 
 
   // --- HANDLERS ---
+  
+  // FIXED: Auto-update participants when creator changes manually
   useEffect(() => {
     if (!dataLoaded) return
 
     if (creatorType === 'organization' && selectedCreatorOrg) {
+       // Only switch default participants if we are in a simple mode (public or single org)
        if (participantType === 'public' || participantType === 'organization') {
           setParticipantType('organization')
-          if (!partOrgs.includes(selectedCreatorOrg)) {
-             setPartOrgs(prev => [...prev, selectedCreatorOrg])
-          }
+          
+          // FIX: Directly set the list to ONLY the new creator.
+          // This clears out previous selections so they don't stack up.
+          setPartOrgs([selectedCreatorOrg]) 
        }
     } else if (creatorType === 'faith_admin') {
+       // If switching back to Admin, default to Public and clear orgs
        if (participantType === 'organization') {
           setParticipantType('public')
           setPartOrgs([])
@@ -260,10 +265,9 @@ export default function CreateEventPage() {
     let finalPostingDate = null
     if (enableExtendedPosting && postingOpenUntil) {
       const postingEnd = new Date(postingOpenUntil)
-      
       // Rule 2: Extended Posting > End Date
       if (postingEnd <= end) { 
-        alert('Extended posting period must be date AFTER the event end date.'); 
+        alert('Extended posting period must be AFTER the event end date.'); 
         return 
       }
       finalPostingDate = postingOpenUntil
@@ -484,7 +488,7 @@ export default function CreateEventPage() {
                   <input type="datetime-local" value={postingOpenUntil} onChange={(e) => setPostingOpenUntil(e.target.value)} className="w-full px-3 py-2 border rounded" />
                   <p className="text-xs text-gray-500 mt-1">
                     Users can continue posting until this date, even after the event ends.<br/>
-                    <span className="text-red-500 font-bold">* Must be a date after the event End Date.</span>
+                    <span className="text-red-500 font-bold">* Must be after the event End Date.</span>
                   </p>
                 </div>
              )}
