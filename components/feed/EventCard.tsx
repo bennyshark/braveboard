@@ -1,3 +1,4 @@
+// components/feed/EventCard.tsx
 "use client"
 import { Calendar, MapPin, Users, MessageCircle, Pin, ArrowRight, MoreVertical, Eye, EyeOff, Plus } from "lucide-react"
 import { EventItem } from "@/app/(site)/home/types"

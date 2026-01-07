@@ -1,3 +1,4 @@
+// components/home/FeedFilters.tsx
 import { Search, Filter, Megaphone } from "lucide-react"
 import { Organization } from "@/app/(site)/home/types"
 

@@ -1,3 +1,5 @@
+// components/feed/PostCard.tsx
+
 import { MessageCircle, Share2, Bookmark, Clock, Image, MoreVertical } from "lucide-react"
 import { Post } from "@/app/(site)/home/types"
 

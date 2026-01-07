@@ -1,3 +1,4 @@
+// app/(site)/home/types.ts
 export type Organization = {
   id: string
   code: string

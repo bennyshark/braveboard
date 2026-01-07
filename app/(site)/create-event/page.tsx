@@ -1,3 +1,5 @@
+// app/(site)/create-event/page.tsx
+// (for reference)
 "use client"
 
 import { 

@@ -1,3 +1,4 @@
+// app/(site)/home/page.tsx
 "use client"
 import { useState, useEffect } from "react"
 import { Globe, Users, Megaphone, Loader2, AlertCircle } from "lucide-react"
