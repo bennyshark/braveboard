@@ -1,11 +1,12 @@
 // components/feed/EventCard.tsx
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Calendar, MapPin, Users, MessageCircle, Pin, ArrowRight, MoreVertical, Eye, EyeOff, Plus } from "lucide-react"
 import { EventItem } from "@/app/(site)/home/types"
 import { PostCard } from "./PostCard"
 import { CreatePostDialog } from "@/components/posts/CreatePostDialog"
+import { createBrowserClient } from "@supabase/ssr"
 
 interface EventCardProps {
   event: EventItem
@@ -17,7 +18,82 @@ interface EventCardProps {
 export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }: EventCardProps) {
   const router = useRouter()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
+  const [eventOfText, setEventOfText] = useState("Loading...")
   const visiblePosts = isPostsHidden ? [] : event.posts.slice(0, 3)
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  )
+
+  // Fetch and format "Event of" text
+  useEffect(() => {
+    async function fetchEventOfText() {
+      try {
+        // Get the raw event data with participant arrays
+        const { data: eventData, error } = await supabase
+          .from('events')
+          .select('participant_type, participant_orgs, participant_depts, participant_courses')
+          .eq('id', event.id)
+          .single()
+
+        if (error) throw error
+
+        // If public, just show FAITH
+        if (eventData.participant_type === 'public') {
+          setEventOfText("FAITH")
+          return
+        }
+
+        const names: string[] = []
+
+        // Fetch organization names
+        if (eventData.participant_orgs && eventData.participant_orgs.length > 0) {
+          const { data: orgs } = await supabase
+            .from('organizations')
+            .select('name')
+            .in('id', eventData.participant_orgs)
+          
+          if (orgs) names.push(...orgs.map(o => o.name))
+        }
+
+        // Fetch department names
+        if (eventData.participant_depts && eventData.participant_depts.length > 0) {
+          const { data: depts } = await supabase
+            .from('departments')
+            .select('name')
+            .in('code', eventData.participant_depts)
+          
+          if (depts) names.push(...depts.map(d => d.name))
+        }
+
+        // Fetch course names
+        if (eventData.participant_courses && eventData.participant_courses.length > 0) {
+          const { data: courses } = await supabase
+            .from('courses')
+            .select('name')
+            .in('code', eventData.participant_courses)
+          
+          if (courses) names.push(...courses.map(c => c.name))
+        }
+
+        // Format the output
+        if (names.length === 0) {
+          setEventOfText("Custom Group")
+        } else if (names.length <= 3) {
+          setEventOfText(names.join(", "))
+        } else {
+          setEventOfText(`${names.slice(0, 3).join(", ")} +${names.length - 3} more`)
+        }
+
+      } catch (error) {
+        console.error("Error fetching event participants:", error)
+        setEventOfText("Custom Group")
+      }
+    }
+
+    fetchEventOfText()
+  }, [event.id, supabase])
 
   const handleCardClick = () => {
     router.push(`/event/${event.id}`)
@@ -65,11 +141,13 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
 
                 {/* Meta Stats */}
                 <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
-                  <span className="flex items-center gap-1 font-medium"><Calendar className="h-3 w-3" /> {event.date}</span>
+                  <span className="flex items-center gap-1 font-medium">
+                    <Calendar className="h-3 w-3" /> {event.date}
+                  </span>
                   <span>•</span>
-                  <span className="flex items-center gap-1 font-medium"><MapPin className="h-3 w-3" /> {event.visibility}</span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1 font-medium"><Users className="h-3 w-3" /> {event.participants} participants</span>
+                  <span className="flex items-center gap-1 font-medium">
+                    <Users className="h-3 w-3" /> Event for: {eventOfText}
+                  </span>
                 </div>
               </div>
               <button 
