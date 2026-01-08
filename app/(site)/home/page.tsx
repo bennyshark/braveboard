@@ -23,10 +23,85 @@ export default function HomePage() {
   
   // --- Data State ---
   const [events, setEvents] = useState<EventItem[]>([])
-  const [allOrganizations, setAllOrganizations] = useState<Organization[]>([]) // For the Filter Bar
-  const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([]) // For the Create Button
+  const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
+  const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+
+  // Function to load events (can be called on refresh)
+  const loadEvents = async () => {
+    try {
+      const { data: eventsData, error: eventsError } = await supabase
+        .from('events')
+        .select(`
+          *,
+          creator_org:organizations(name),
+          posts(id, created_at, content, author_id, image_urls)
+        `)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (eventsError) throw eventsError
+
+      const mappedEvents: EventItem[] = eventsData.map((row: any) => {
+        const start = new Date(row.start_date)
+        const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        
+        let organizerName = "Unknown"
+        let organizerType = "user"
+        
+        if (row.creator_type === 'faith_admin') {
+          organizerName = "FAITH Administration"
+          organizerType = "faith" 
+        } else if (row.creator_type === 'organization') {
+          organizerName = row.creator_org?.name || "Organization"
+          organizerType = "organization"
+        }
+
+        const visibilityMap: Record<string, string> = {
+          'public': 'Public',
+          'organization': 'Selected Orgs',
+          'department': 'Selected Depts',
+          'course': 'Selected Courses',
+          'mixed': 'Custom Group'
+        }
+
+        // Map posts
+        const posts = (row.posts || []).map((p: any) => ({
+          id: p.id,
+          author: "User", // Will be fetched separately if needed
+          authorType: "user",
+          content: p.content || "",
+          time: new Date(p.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          }),
+          likes: 0,
+          comments: 0,
+          imageUrls: p.image_urls || []
+        }))
+
+        return {
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          organizer: { type: organizerType, name: organizerName },
+          date: dateStr,
+          tags: row.tags || [],
+          visibility: visibilityMap[row.participant_type] || 'Restricted',
+          visibilityType: row.participant_type,
+          postingRestricted: row.who_can_post === 'officers',
+          isPinned: row.is_pinned,
+          participants: row.participant_count || 0,
+          totalPosts: row.post_count || 0,
+          posts: posts
+        }
+      })
+
+      setEvents(mappedEvents)
+    } catch (err) {
+      console.error("Error loading events:", err)
+    }
+  }
 
   // 1. Fetch Data (User, Orgs, Events)
   useEffect(() => {
@@ -35,9 +110,8 @@ export default function HomePage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
 
-        // --- A. Fetch User Permissions (If logged in) ---
         if (user) {
-          // 1. Check Admin Status
+          // Check Admin Status
           const { data: profile } = await supabase
             .from('profiles')
             .select('role')
@@ -46,7 +120,7 @@ export default function HomePage() {
           
           setIsFaithAdmin(profile?.role === 'admin')
 
-          // 2. Fetch User's Officer/Admin Memberships (For Create Button)
+          // Fetch User's Officer/Admin Memberships
           const { data: memberships } = await supabase
             .from('user_organizations')
             .select(`
@@ -66,7 +140,7 @@ export default function HomePage() {
           setUserCreateOrgs(validUserOrgs)
         }
 
-        // --- B. Fetch All Organizations (For Filters) ---
+        // Fetch All Organizations
         const { data: orgsData, error: orgsError } = await supabase
           .from('organizations')
           .select('id, code, name, member_count')
@@ -74,70 +148,20 @@ export default function HomePage() {
         
         if (orgsError) throw orgsError
 
-        // Manually prepend "FAITH Administration" so it appears in the filter list
         const fetchedOrgs: Organization[] = [
           { id: "faith_admin", code: "FAITH", name: "FAITH Administration", role: "admin", members: 0 },
           ...(orgsData?.map((o: any) => ({
             id: o.id,
             code: o.code,
             name: o.name,
-            role: '', // Role doesn't matter for the public filter list
+            role: '',
             members: o.member_count
           })) || [])
         ]
         setAllOrganizations(fetchedOrgs)
 
-        // --- C. Fetch Events ---
-        const { data: eventsData, error: eventsError } = await supabase
-          .from('events')
-          .select(`*, creator_org:organizations(name)`)
-          .order('is_pinned', { ascending: false })
-          .order('created_at', { ascending: false })
-
-        if (eventsError) throw eventsError
-
-        const mappedEvents: EventItem[] = eventsData.map((row: any) => {
-          const start = new Date(row.start_date)
-          const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          
-          let organizerName = "Unknown"
-          let organizerType = "user"
-          
-          // Map types
-          if (row.creator_type === 'faith_admin') {
-            organizerName = "FAITH Administration"
-            organizerType = "faith" 
-          } else if (row.creator_type === 'organization') {
-            organizerName = row.creator_org?.name || "Organization"
-            organizerType = "organization"
-          }
-
-          const visibilityMap: Record<string, string> = {
-            'public': 'Public',
-            'organization': 'Selected Orgs',
-            'department': 'Selected Depts',
-            'course': 'Selected Courses',
-            'mixed': 'Custom Group'
-          }
-
-          return {
-            id: row.id,
-            title: row.title,
-            description: row.description,
-            organizer: { type: organizerType, name: organizerName },
-            date: dateStr,
-            tags: row.tags || [],
-            visibility: visibilityMap[row.participant_type] || 'Restricted',
-            visibilityType: row.participant_type,
-            postingRestricted: row.who_can_post === 'officers',
-            isPinned: row.is_pinned,
-            participants: row.participant_count || 0,
-            totalPosts: row.post_count || 0,
-            posts: []
-          }
-        })
-
-        setEvents(mappedEvents)
+        // Load events
+        await loadEvents()
 
       } catch (err) {
         console.error("Error loading home data:", err)
@@ -167,32 +191,21 @@ export default function HomePage() {
 
   // --- FILTER LOGIC ---
   const filteredEvents = events.filter(event => {
-    // 1. Search
     if (searchTerm && !event.title.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false
     }
 
-    // 2. Tabs
     if (activeFeedFilter === "org") {
-      // Allow both 'organization' type AND 'faith' type in the Org tab
       const isOrgOrFaith = event.organizer.type === "organization" || event.organizer.type === "faith"
-      
       if (!isOrgOrFaith) return false
 
-      // If a specific sub-filter is selected
       if (selectedOrg) {
-        // Handle FAITH Admin selection specially
         if (selectedOrg === 'faith_admin') {
            return event.organizer.type === 'faith'
         }
-        
-        // Handle standard Orgs:
-        // We find the org object in our fetched list to match the name
-        // (Since event.organizer.name is just a string from the join)
         const targetOrgName = allOrganizations.find(o => o.id === selectedOrg)?.name
         return event.organizer.name === targetOrgName
       }
-      
       return true
     }
 
@@ -271,6 +284,7 @@ export default function HomePage() {
               event={event}
               isPostsHidden={hiddenEvents.has(event.id)}
               onToggleHide={(e) => toggleHideEvent(event.id, e)}
+              onPostCreated={loadEvents}
             />
           ))
         ) : (
