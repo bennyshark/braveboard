@@ -31,17 +31,54 @@ export default function HomePage() {
   // Function to load events (can be called on refresh)
   const loadEvents = async () => {
     try {
+      // Fetch events
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
         .select(`
           *,
-          creator_org:organizations(name),
-          posts(id, created_at, content, author_id, image_urls)
+          creator_org:organizations(name)
         `)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
       if (eventsError) throw eventsError
+
+      // Fetch posts for all events (limit to 3 most recent per event)
+      const eventIds = eventsData.map((e: any) => e.id)
+      const { data: allPosts, error: postsError } = await supabase
+        .from('posts')
+        .select('*')
+        .in('event_id', eventIds)
+        .order('created_at', { ascending: false })
+
+      if (postsError) throw postsError
+
+      // Group posts by event
+      const postsByEvent = new Map<string, any[]>()
+      allPosts.forEach((post: any) => {
+        if (!postsByEvent.has(post.event_id)) {
+          postsByEvent.set(post.event_id, [])
+        }
+        const eventPosts = postsByEvent.get(post.event_id)!
+        if (eventPosts.length < 3) { // Only keep top 3 per event
+          eventPosts.push(post)
+        }
+      })
+
+      // Fetch author information for all posts
+      const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
+      const { data: authorsData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .in('id', authorIds)
+
+      // Create author lookup map
+      const authorMap = new Map(
+        authorsData?.map(author => [
+          author.id, 
+          `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`
+        ]) || []
+      )
 
       const mappedEvents: EventItem[] = eventsData.map((row: any) => {
         const start = new Date(row.start_date)
@@ -66,16 +103,17 @@ export default function HomePage() {
           'mixed': 'Custom Group'
         }
 
-        // Map posts
-        const posts = (row.posts || []).map((p: any) => ({
+        // Map posts for this event
+        const eventPosts = postsByEvent.get(row.id) || []
+        const posts = eventPosts.map((p: any) => ({
           id: p.id,
-          author: "User", // Will be fetched separately if needed
+          author: authorMap.get(p.author_id) || 'Unknown User',
           authorType: "user",
           content: p.content || "",
           time: new Date(p.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           }),
-          likes: 0,
+          likes: p.likes || 0,
           comments: 0,
           imageUrls: p.image_urls || []
         }))

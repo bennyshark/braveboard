@@ -62,7 +62,10 @@ export default function EventDetailsPage() {
         .eq('id', eventId)
         .single()
 
-      if (eventError) throw eventError
+      if (eventError) {
+        console.error("Event fetch error:", eventError)
+        throw eventError
+      }
 
       // Map event data
       const start = new Date(eventData.start_date)
@@ -109,21 +112,40 @@ export default function EventDetailsPage() {
         totalPosts: eventData.post_count || 0
       })
 
-      // Fetch posts
+      // Fetch posts separately with author information
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
-        .select(`
-          *,
-          author:profiles!posts_author_id_fkey(first_name, last_name)
-        `)
+        .select('*')
         .eq('event_id', eventId)
         .order('created_at', { ascending: false })
 
-      if (postsError) throw postsError
+      if (postsError) {
+        console.error("Posts fetch error:", postsError)
+        throw postsError
+      }
+
+      // Fetch author details for all posts
+      const authorIds = [...new Set(postsData.map((p: any) => p.author_id))]
+      const { data: authorsData, error: authorsError } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .in('id', authorIds)
+
+      if (authorsError) {
+        console.error("Authors fetch error:", authorsError)
+      }
+
+      // Create author lookup map
+      const authorMap = new Map(
+        authorsData?.map(author => [
+          author.id, 
+          `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`
+        ]) || []
+      )
 
       const mappedPosts: Post[] = postsData.map((post: any) => ({
         id: post.id,
-        author: `${post.author?.first_name || 'Unknown'} ${post.author?.last_name || 'User'}`,
+        author: authorMap.get(post.author_id) || 'Unknown User',
         authorType: 'user',
         content: post.content,
         time: new Date(post.created_at).toLocaleString('en-US', { 
