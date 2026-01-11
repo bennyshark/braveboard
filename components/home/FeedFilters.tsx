@@ -19,10 +19,10 @@ export function FeedFilters({
 }: FeedFiltersProps) {
   
   const announcementSources = [
-    { id: "faith", name: "FAITH Administration" },
-    { id: "scouncil", name: "Student Council" },
-    { id: "lighthouse", name: "Lighthouse" },
     { id: "all", name: "All Announcements" },
+    { id: "faith", name: "FAITH Administration" },
+    { id: "sc", name: "Student Council" },
+    { id: "lighthouse", name: "Lighthouse" },
   ]
 
   // --- ORGANIZATION FILTER ---

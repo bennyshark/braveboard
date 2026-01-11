@@ -11,6 +11,8 @@ interface CreatePostDialogProps {
   onPostCreated?: () => void
 }
 
+const MAX_IMAGES = 150
+
 export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: CreatePostDialogProps) {
   const [content, setContent] = useState("")
   const [images, setImages] = useState<File[]>([])
@@ -25,8 +27,8 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    if (files.length + images.length > 4) {
-      alert("You can only upload up to 4 images")
+    if (files.length + images.length > MAX_IMAGES) {
+      alert(`You can only upload up to ${MAX_IMAGES} images`)
       return
     }
 
@@ -62,8 +64,8 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
       const imageUrls: string[] = []
       for (const image of images) {
         const fileExt = image.name.split('.').pop()
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`
-        const filePath = `post-images/${fileName}`
+        const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+        const filePath = `${user.id}/${fileName}`
 
         const { error: uploadError } = await supabase.storage
           .from('posts')
@@ -169,18 +171,13 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
                 <ImageIcon className="h-4 w-4" />
-                Attached Images ({imagePreviews.length}/4)
+                Attached Images ({imagePreviews.length}/{MAX_IMAGES})
               </div>
-              <div className={`grid gap-4 ${
-                imagePreviews.length === 1 ? 'grid-cols-1' :
-                imagePreviews.length === 2 ? 'grid-cols-2' :
-                imagePreviews.length === 3 ? 'grid-cols-3' :
-                'grid-cols-2'
-              }`}>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-96 overflow-y-auto">
                 {imagePreviews.map((preview, idx) => (
                   <div 
                     key={idx} 
-                    className="relative group aspect-video rounded-2xl overflow-hidden bg-gray-100 shadow-md hover:shadow-xl transition-all"
+                    className="relative group aspect-square rounded-2xl overflow-hidden bg-gray-100 shadow-md hover:shadow-xl transition-all"
                   >
                     <img 
                       src={preview} 
@@ -190,9 +187,9 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300"></div>
                     <button
                       onClick={() => removeImage(idx)}
-                      className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-110"
+                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-110"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3 w-3" />
                     </button>
                   </div>
                 ))}
@@ -210,7 +207,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
             className="hidden"
           />
           
-          {images.length < 4 && (
+          {images.length < MAX_IMAGES && (
             <button
               onClick={() => fileInputRef.current?.click()}
               className="flex items-center justify-center gap-3 w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-blue-50 hover:to-purple-50 border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-2xl text-gray-700 hover:text-blue-700 font-bold transition-all group"
@@ -218,7 +215,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
               <div className="p-2 bg-white rounded-lg shadow-sm group-hover:shadow-md transition-all">
                 <ImageIcon className="h-5 w-5" />
               </div>
-              <span>Add Images ({images.length}/4)</span>
+              <span>Add Images ({images.length}/{MAX_IMAGES})</span>
             </button>
           )}
         </div>

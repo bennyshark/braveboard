@@ -5,8 +5,21 @@ import { Globe, Users, Megaphone, Loader2, AlertCircle } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Organization, EventItem } from "@/app/(site)/home/types"
 import { EventCard } from "@/components/feed/EventCard"
-import { CreateEventButton } from "@/components/home/CreateEventButton"
+import { CreateButton } from "@/components/home/CreateButton"
 import { FeedFilters } from "@/components/home/FeedFilters"
+import { AnnouncementCard } from "@/components/feed/AnnouncementCard"
+
+type Announcement = {
+  id: string
+  header: string
+  body: string
+  organizerType: string
+  organizerName: string
+  imageUrl: string | null
+  isPinned: boolean
+  likes: number
+  createdAt: string
+}
 
 export default function HomePage() {
   const supabase = createBrowserClient(
@@ -23,15 +36,15 @@ export default function HomePage() {
   
   // --- Data State ---
   const [events, setEvents] = useState<EventItem[]>([])
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
   const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Function to load events (can be called on refresh)
+  // Function to load events
   const loadEvents = async () => {
     try {
-      // Fetch events
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
         .select(`
@@ -43,7 +56,6 @@ export default function HomePage() {
 
       if (eventsError) throw eventsError
 
-      // Fetch posts for all events (limit to 3 most recent per event)
       const eventIds = eventsData.map((e: any) => e.id)
       const { data: allPosts, error: postsError } = await supabase
         .from('posts')
@@ -53,26 +65,23 @@ export default function HomePage() {
 
       if (postsError) throw postsError
 
-      // Group posts by event
       const postsByEvent = new Map<string, any[]>()
       allPosts.forEach((post: any) => {
         if (!postsByEvent.has(post.event_id)) {
           postsByEvent.set(post.event_id, [])
         }
         const eventPosts = postsByEvent.get(post.event_id)!
-        if (eventPosts.length < 3) { // Only keep top 3 per event
+        if (eventPosts.length < 3) {
           eventPosts.push(post)
         }
       })
 
-      // Fetch author information for all posts
       const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
       const { data: authorsData } = await supabase
         .from('profiles')
         .select('id, first_name, last_name')
         .in('id', authorIds)
 
-      // Create author lookup map
       const authorMap = new Map(
         authorsData?.map(author => [
           author.id, 
@@ -103,7 +112,6 @@ export default function HomePage() {
           'mixed': 'Custom Group'
         }
 
-        // Map posts for this event
         const eventPosts = postsByEvent.get(row.id) || []
         const posts = eventPosts.map((p: any) => ({
           id: p.id,
@@ -141,7 +149,54 @@ export default function HomePage() {
     }
   }
 
-  // 1. Fetch Data (User, Orgs, Events)
+  // Function to load announcements
+  const loadAnnouncements = async () => {
+    try {
+      const { data: announcementsData, error } = await supabase
+        .from('announcements')
+        .select(`
+          *,
+          creator_org:organizations(name)
+        `)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const mappedAnnouncements: Announcement[] = announcementsData.map((row: any) => {
+        let organizerName = "Unknown"
+        let organizerType = "user"
+        
+        if (row.creator_type === 'faith_admin') {
+          organizerName = "FAITH Administration"
+          organizerType = "faith" 
+        } else if (row.creator_type === 'organization') {
+          organizerName = row.creator_org?.name || "Organization"
+          organizerType = "organization"
+        }
+
+        return {
+          id: row.id,
+          header: row.header,
+          body: row.body,
+          organizerType,
+          organizerName,
+          imageUrl: row.image_url,
+          isPinned: row.is_pinned,
+          likes: row.likes || 0,
+          createdAt: new Date(row.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      })
+
+      setAnnouncements(mappedAnnouncements)
+    } catch (err) {
+      console.error("Error loading announcements:", err)
+    }
+  }
+
+  // Load all data
   useEffect(() => {
     async function loadData() {
       setIsLoading(true)
@@ -149,7 +204,6 @@ export default function HomePage() {
         const { data: { user } } = await supabase.auth.getUser()
 
         if (user) {
-          // Check Admin Status
           const { data: profile } = await supabase
             .from('profiles')
             .select('role')
@@ -158,7 +212,6 @@ export default function HomePage() {
           
           setIsFaithAdmin(profile?.role === 'admin')
 
-          // Fetch User's Officer/Admin Memberships
           const { data: memberships } = await supabase
             .from('user_organizations')
             .select(`
@@ -178,7 +231,6 @@ export default function HomePage() {
           setUserCreateOrgs(validUserOrgs)
         }
 
-        // Fetch All Organizations
         const { data: orgsData, error: orgsError } = await supabase
           .from('organizations')
           .select('id, code, name, member_count')
@@ -198,8 +250,7 @@ export default function HomePage() {
         ]
         setAllOrganizations(fetchedOrgs)
 
-        // Load events
-        await loadEvents()
+        await Promise.all([loadEvents(), loadAnnouncements()])
 
       } catch (err) {
         console.error("Error loading home data:", err)
@@ -248,10 +299,37 @@ export default function HomePage() {
     }
 
     if (activeFeedFilter === "announcements") {
-       return event.organizer.type === "faith" || event.isPinned
+      return false // Events don't show in announcements feed
     }
 
-    return true
+    return true // Campus feed shows all events
+  })
+
+  const filteredAnnouncements = announcements.filter(announcement => {
+    // Announcements only show in campus feed and announcements feed
+    if (activeFeedFilter === "org") {
+      return false // Don't show in org feed
+    }
+
+    if (activeFeedFilter === "announcements") {
+      // Filter by selected source
+      if (!selectedAnnouncementSource || selectedAnnouncementSource === "all") {
+        return true
+      }
+      
+      // Map source IDs to organizer names
+      const sourceMap: Record<string, string> = {
+        "faith": "FAITH Administration",
+        "sc": "Student Council",
+        "lighthouse": "Lighthouse"
+      }
+      
+      const targetName = sourceMap[selectedAnnouncementSource]
+      return announcement.organizerName === targetName
+    }
+
+    // Show in campus feed
+    return activeFeedFilter === "feed"
   })
 
   return (
@@ -290,7 +368,7 @@ export default function HomePage() {
             })}
           </div>
           
-          <CreateEventButton 
+          <CreateButton 
             activeFeedFilter={activeFeedFilter}
             isFaithAdmin={isFaithAdmin}
             userCreateOrgs={userCreateOrgs}
@@ -313,23 +391,37 @@ export default function HomePage() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-500">
             <Loader2 className="h-10 w-10 animate-spin mb-4 text-blue-500" />
-            <p>Loading campus events...</p>
+            <p>Loading campus content...</p>
           </div>
-        ) : filteredEvents.length > 0 ? (
-          filteredEvents.map(event => (
-            <EventCard 
-              key={event.id}
-              event={event}
-              isPostsHidden={hiddenEvents.has(event.id)}
-              onToggleHide={(e) => toggleHideEvent(event.id, e)}
-              onPostCreated={loadEvents}
-            />
-          ))
         ) : (
-          <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
-            <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
-            <p className="text-gray-500 font-medium">No events found matching your criteria.</p>
-          </div>
+          <>
+            {/* Show announcements first if in campus feed or announcements feed */}
+            {(activeFeedFilter === "feed" || activeFeedFilter === "announcements") && 
+              filteredAnnouncements.map(announcement => (
+                <AnnouncementCard key={announcement.id} announcement={announcement} />
+              ))
+            }
+            
+            {/* Then show events (if not in announcements feed) */}
+            {activeFeedFilter !== "announcements" && 
+              filteredEvents.map(event => (
+                <EventCard 
+                  key={event.id}
+                  event={event}
+                  isPostsHidden={hiddenEvents.has(event.id)}
+                  onToggleHide={(e) => toggleHideEvent(event.id, e)}
+                  onPostCreated={loadEvents}
+                />
+              ))
+            }
+
+            {filteredEvents.length === 0 && filteredAnnouncements.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
+                <p className="text-gray-500 font-medium">No content found matching your criteria.</p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
