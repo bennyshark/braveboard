@@ -78,6 +78,9 @@ function CreateAnnouncementForm() {
   const [audDepts, setAudDepts] = useState<string[]>([])
   const [audCourses, setAudCourses] = useState<string[]>([])
 
+  // Organizations allowed to create announcements
+  const announcementAllowedOrgs = ["Student Council", "Lighthouse"]
+
   // --- 1. FETCH DATA ---
   useEffect(() => {
     async function loadData() {
@@ -114,7 +117,12 @@ function CreateAnnouncementForm() {
           role: m.role
         })) || []
 
-        setUserOrgs(formattedOrgs)
+        // FILTER: Only keep Student Council and Lighthouse
+        const allowedUserOrgs = formattedOrgs.filter(org => 
+          announcementAllowedOrgs.includes(org.name)
+        )
+
+        setUserOrgs(allowedUserOrgs)
 
         // Reference Data
         const [deptRes, courseRes, orgRes] = await Promise.all([
@@ -339,6 +347,29 @@ function CreateAnnouncementForm() {
   )
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>
+
+  // Check if user has permission to create announcements
+  const canCreateAnnouncement = isFaithAdmin || userOrgs.length > 0
+
+  if (!loading && !canCreateAnnouncement) {
+    return (
+      <div className="max-w-4xl mx-auto py-10 px-4">
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-8 text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-900 mb-2">Access Denied</h2>
+          <p className="text-red-700 mb-4">
+            Only FAITH Administration, Student Council, and Lighthouse can create announcements.
+          </p>
+          <button
+            onClick={() => router.push('/home')}
+            className="px-6 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700"
+          >
+            Go Back to Home
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-10 px-4">
