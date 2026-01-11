@@ -73,6 +73,7 @@ function CreateAnnouncementForm() {
   const [isPinned, setIsPinned] = useState(false)
   
   // Audience (Visibility)
+  // Default is 'public' for everyone now
   const [audienceType, setAudienceType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [audOrgs, setAudOrgs] = useState<string[]>([])
   const [audDepts, setAudDepts] = useState<string[]>([])
@@ -155,23 +156,24 @@ function CreateAnnouncementForm() {
     
     let initialCreatorType: 'faith_admin' | 'organization' = 'faith_admin'
     let initialOrgId = ''
-    let initialAudType: any = 'public'
+    // CHANGED: Default is always public unless specifically requested via URL to be restricted
+    let initialAudType: any = 'public' 
 
     if (paramType === 'organization' && paramOrgId && userOrgs.find(o => o.id === paramOrgId)) {
       initialCreatorType = 'organization'
       initialOrgId = paramOrgId
-      initialAudType = 'organization'
-      setAudOrgs([paramOrgId]) // Default: check their org
+      // If URL specifically forces organization audience (optional logic, kept simple here)
+      // initialAudType = 'organization' 
     } 
     else if (paramType === 'faith_admin' && isFaithAdmin) {
       initialCreatorType = 'faith_admin'
-      initialAudType = 'public' // Default: public for FAITH admin
+      initialAudType = 'public'
     } 
     else if (!isFaithAdmin && userOrgs.length > 0) {
       initialCreatorType = 'organization'
       initialOrgId = userOrgs[0].id
-      initialAudType = 'organization'
-      setAudOrgs([userOrgs[0].id])
+      // CHANGED: Even for orgs, we default to public
+      initialAudType = 'public' 
     }
     else {
       initialCreatorType = 'faith_admin'
@@ -184,25 +186,7 @@ function CreateAnnouncementForm() {
 
   }, [dataLoaded, searchParams, userOrgs, isFaithAdmin])
 
-  // --- HANDLERS ---
-  useEffect(() => {
-    if (!dataLoaded) return
-
-    if (creatorType === 'organization' && selectedCreatorOrg) {
-       if (audienceType === 'public' || audienceType === 'organization') {
-          setAudienceType('organization')
-          if (!audOrgs.includes(selectedCreatorOrg)) {
-             setAudOrgs([selectedCreatorOrg])
-          }
-       }
-    } else if (creatorType === 'faith_admin') {
-       if (audienceType === 'organization') {
-          setAudienceType('public')
-          setAudOrgs([])
-       }
-    }
-  }, [creatorType, selectedCreatorOrg])
-
+  // --- 3. AUDIENCE RESET LOGIC ---
   // Reset audience selections when type changes
   useEffect(() => {
     if (!dataLoaded) return
@@ -212,16 +196,16 @@ function CreateAnnouncementForm() {
       setAudDepts([])
       setAudCourses([])
     } else if (audienceType === 'organization' || audienceType === 'mixed') {
+      // If switching explicitly to Org audience, pre-fill with their own org for convenience
+      // but only if they are not already public
       const keepOrg = (creatorType === 'organization' && selectedCreatorOrg) ? [selectedCreatorOrg] : []
-      setAudOrgs(keepOrg)
-      setAudDepts([])
-      setAudCourses([])
-    } else {
-      setAudOrgs([])
-      setAudDepts([])
-      setAudCourses([])
-    }
-  }, [audienceType, dataLoaded])
+      
+      // Only set if empty (preserve user selection if they are toggling)
+      if(audOrgs.length === 0) {
+        setAudOrgs(keepOrg)
+      }
+    } 
+  }, [audienceType, creatorType, selectedCreatorOrg, dataLoaded])
 
   const toggleSelection = (array: string[], setArray: (arr: string[]) => void, value: string) => {
     if (array.includes(value)) {
