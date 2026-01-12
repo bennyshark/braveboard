@@ -1,7 +1,7 @@
 // components/posts/CreatePostDialog.tsx
 "use client"
-import { useState, useRef } from "react"
-import { X, Image as ImageIcon, Loader2, Send, Sparkles } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { X, Image as ImageIcon, Loader2, Send, Sparkles, Shield, Users, User, ChevronDown } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface CreatePostDialogProps {
@@ -11,6 +11,13 @@ interface CreatePostDialogProps {
   onPostCreated?: () => void
 }
 
+type PostingIdentity = {
+  type: 'user' | 'organization' | 'faith_admin'
+  id?: string
+  name: string
+  icon: 'user' | 'org' | 'faith'
+}
+
 const MAX_IMAGES = 150
 
 export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: CreatePostDialogProps) {
@@ -18,12 +25,118 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
   const [images, setImages] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showIdentityDropdown, setShowIdentityDropdown] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  
+  // Posting identity state
+  const [availableIdentities, setAvailableIdentities] = useState<PostingIdentity[]>([])
+  const [selectedIdentity, setSelectedIdentity] = useState<PostingIdentity | null>(null)
+  const [loading, setLoading] = useState(true)
   
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
+
+  // Fetch available posting identities
+  useEffect(() => {
+    if (!isOpen) return
+    
+    async function fetchIdentities() {
+      try {
+        setLoading(true)
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        const identities: PostingIdentity[] = []
+
+        // Always add user's personal identity first
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('first_name, last_name, role')
+          .eq('id', user.id)
+          .single()
+
+        const userName = profile 
+          ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'You'
+          : 'You'
+
+        identities.push({
+          type: 'user',
+          name: userName,
+          icon: 'user'
+        })
+
+        // Check if user is FAITH admin
+        const isFaithAdmin = profile?.role === 'admin'
+        if (isFaithAdmin) {
+          identities.push({
+            type: 'faith_admin',
+            name: 'FAITH Administration',
+            icon: 'faith'
+          })
+        }
+
+        // Get event's participant organizations
+        const { data: eventData } = await supabase
+          .from('events')
+          .select('participant_orgs')
+          .eq('id', eventId)
+          .single()
+
+        const participantOrgIds = eventData?.participant_orgs || []
+
+        // Get user's organizations where they're officer/admin
+        const { data: userOrgs } = await supabase
+          .from('user_organizations')
+          .select(`
+            organization_id,
+            role,
+            organization:organizations!inner(id, name)
+          `)
+          .eq('user_id', user.id)
+          .in('role', ['officer', 'admin'])
+
+        // Filter to only orgs that can participate in this event
+        if (userOrgs && participantOrgIds.length > 0) {
+          const eligibleOrgs = userOrgs.filter((uo: any) => 
+            participantOrgIds.includes(uo.organization_id)
+          )
+
+          eligibleOrgs.forEach((uo: any) => {
+            identities.push({
+              type: 'organization',
+              id: uo.organization.id,
+              name: uo.organization.name,
+              icon: 'org'
+            })
+          })
+        }
+
+        setAvailableIdentities(identities)
+        setSelectedIdentity(identities[0]) // Default to personal
+
+      } catch (error) {
+        console.error('Error fetching identities:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchIdentities()
+  }, [isOpen, eventId, supabase])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowIdentityDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -34,7 +147,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
 
     setImages([...images, ...files])
     
-    // Create previews
     files.forEach(file => {
       const reader = new FileReader()
       reader.onloadend = () => {
@@ -55,12 +167,17 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
       return
     }
 
+    if (!selectedIdentity) {
+      alert("Please select a posting identity")
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Not authenticated")
 
-      // Upload images to Supabase Storage
+      // Upload images
       const imageUrls: string[] = []
       for (const image of images) {
         const fileExt = image.name.split('.').pop()
@@ -80,12 +197,14 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         imageUrls.push(publicUrl)
       }
 
-      // Create post
+      // Create post with identity
       const { error } = await supabase.from('posts').insert({
         event_id: eventId,
         author_id: user.id,
         content: content.trim(),
-        image_urls: imageUrls
+        image_urls: imageUrls,
+        posted_as_type: selectedIdentity.type,
+        posted_as_org_id: selectedIdentity.type === 'organization' ? selectedIdentity.id : null
       })
 
       if (error) throw error
@@ -95,7 +214,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
       setImages([])
       setImagePreviews([])
       
-      // Callback and close
       if (onPostCreated) onPostCreated()
       onClose()
       
@@ -104,6 +222,22 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
       alert(`Failed to create post: ${error.message}`)
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const getIdentityIcon = (icon: string) => {
+    switch(icon) {
+      case 'faith': return <Shield className="h-5 w-5 text-purple-600" />
+      case 'org': return <Users className="h-5 w-5 text-orange-600" />
+      default: return <User className="h-5 w-5 text-blue-600" />
+    }
+  }
+
+  const getIdentityBgColor = (icon: string) => {
+    switch(icon) {
+      case 'faith': return 'bg-purple-100'
+      case 'org': return 'bg-orange-100'
+      default: return 'bg-blue-100'
     }
   }
 
@@ -116,7 +250,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
         
-        {/* Header with Gradient */}
+        {/* Header */}
         <div className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 opacity-10"></div>
           <div className="relative flex items-center justify-between p-6 border-b border-gray-200">
@@ -141,7 +275,61 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         {/* Content */}
         <div className="p-8 space-y-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           
-          {/* Text Area with enhanced styling */}
+          {/* Posting Identity Selector */}
+          {!loading && availableIdentities.length > 1 && (
+            <div className="relative" ref={dropdownRef}>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                Posting as:
+              </label>
+              <button
+                onClick={() => setShowIdentityDropdown(!showIdentityDropdown)}
+                className="w-full flex items-center justify-between gap-3 p-4 bg-gray-50 border-2 border-gray-200 rounded-xl hover:border-gray-300 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 ${getIdentityBgColor(selectedIdentity?.icon || 'user')} rounded-lg`}>
+                    {getIdentityIcon(selectedIdentity?.icon || 'user')}
+                  </div>
+                  <span className="font-bold text-gray-900">{selectedIdentity?.name}</span>
+                </div>
+                <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {showIdentityDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-10 overflow-hidden">
+                  {availableIdentities.map((identity, index) => (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        setSelectedIdentity(identity)
+                        setShowIdentityDropdown(false)
+                      }}
+                      className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-left"
+                    >
+                      <div className={`p-2 ${getIdentityBgColor(identity.icon)} rounded-lg`}>
+                        {getIdentityIcon(identity.icon)}
+                      </div>
+                      <div>
+                        <div className="font-bold text-gray-900">{identity.name}</div>
+                        <div className="text-xs text-gray-500 capitalize">{identity.type.replace('_', ' ')}</div>
+                      </div>
+                      {selectedIdentity?.name === identity.name && (
+                        <div className="ml-auto h-2 w-2 rounded-full bg-blue-600"></div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {loading && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          )}
+          
+          {/* Text Area */}
           <div className="relative">
             <textarea
               value={content}
@@ -152,7 +340,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
               maxLength={maxChars}
             />
             
-            {/* Character Counter */}
             <div className="absolute bottom-4 right-4 flex items-center gap-2">
               <span className={`text-xs font-bold px-3 py-1 rounded-full ${
                 charCount > maxChars * 0.9 
@@ -166,7 +353,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
             </div>
           </div>
 
-          {/* Image Previews with improved grid */}
+          {/* Image Previews */}
           {imagePreviews.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
@@ -197,7 +384,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
             </div>
           )}
 
-          {/* Image Upload Button - Enhanced */}
+          {/* Image Upload Button */}
           <input
             ref={fileInputRef}
             type="file"
@@ -220,7 +407,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           )}
         </div>
 
-        {/* Footer - Enhanced */}
+        {/* Footer */}
         <div className="relative overflow-hidden border-t border-gray-200">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 opacity-50"></div>
           <div className="relative flex gap-4 p-6">
@@ -233,7 +420,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting || (!content.trim() && images.length === 0)}
+              disabled={isSubmitting || (!content.trim() && images.length === 0) || !selectedIdentity}
               className="flex-1 py-4 px-6 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 text-white rounded-xl font-bold hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-3 group"
             >
               {isSubmitting ? (

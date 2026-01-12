@@ -40,120 +40,168 @@ export default function HomePage() {
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  const loadEvents = async () => {
-    try {
-      const { data: eventsData, error: eventsError } = await supabase
-        .from('events')
-        .select(`
-          *,
-          creator_org:organizations(name)
-        `)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false })
+// Update this section in app/(site)/home/page.tsx
+// Replace the loadEvents function with this updated version
 
-      if (eventsError) throw eventsError
+const loadEvents = async () => {
+  try {
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('events')
+      .select(`
+        *,
+        creator_org:organizations(name)
+      `)
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false })
 
-      const eventIds = eventsData.map((e: any) => e.id)
-      const { data: allPosts, error: postsError } = await supabase
-        .from('posts')
-        .select('*')
-        .in('event_id', eventIds)
-        .order('created_at', { ascending: false })
+    if (eventsError) throw eventsError
 
-      if (postsError) throw postsError
+    const eventIds = eventsData.map((e: any) => e.id)
+    
+    // Updated query to include posting identity fields
+    const { data: allPosts, error: postsError } = await supabase
+      .from('posts')
+      .select('*, posted_as_type, posted_as_org_id')
+      .in('event_id', eventIds)
+      .order('created_at', { ascending: false })
 
-      const postsByEvent = new Map<string, any[]>()
-      allPosts.forEach((post: any) => {
-        if (!postsByEvent.has(post.event_id)) {
-          postsByEvent.set(post.event_id, [])
+    if (postsError) throw postsError
+
+    const postsByEvent = new Map<string, any[]>()
+    allPosts.forEach((post: any) => {
+      if (!postsByEvent.has(post.event_id)) {
+        postsByEvent.set(post.event_id, [])
+      }
+      const eventPosts = postsByEvent.get(post.event_id)!
+      if (eventPosts.length < 3) {
+        eventPosts.push(post)
+      }
+    })
+
+    // Fetch author profiles with avatar URLs
+    const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
+    const { data: authorsData } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, avatar_url')
+      .in('id', authorIds)
+
+    const authorMap = new Map(
+      authorsData?.map(author => [
+        author.id, 
+        {
+          name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
+          avatarUrl: author.avatar_url
         }
-        const eventPosts = postsByEvent.get(post.event_id)!
-        if (eventPosts.length < 3) {
-          eventPosts.push(post)
+      ]) || []
+    )
+
+    // Fetch organization data for posts posted as organizations
+    const orgIds = [...new Set(
+      allPosts
+        .filter((p: any) => p.posted_as_type === 'organization' && p.posted_as_org_id)
+        .map((p: any) => p.posted_as_org_id)
+    )]
+    
+    const { data: orgsData } = await supabase
+      .from('organizations')
+      .select('id, name, avatar_url')
+      .in('id', orgIds)
+
+    const orgMap = new Map(
+      orgsData?.map(org => [
+        org.id,
+        {
+          name: org.name,
+          avatarUrl: org.avatar_url
         }
-      })
+      ]) || []
+    )
 
-      // Fetch author profiles with avatar URLs
-      const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
-      const { data: authorsData } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar_url')
-        .in('id', authorIds)
+    const mappedEvents: EventItem[] = eventsData.map((row: any) => {
+      const start = new Date(row.start_date)
+      const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      
+      let organizerName = "Unknown"
+      let organizerType = "user"
+      
+      if (row.creator_type === 'faith_admin') {
+        organizerName = "FAITH Administration"
+        organizerType = "faith" 
+      } else if (row.creator_type === 'organization') {
+        organizerName = row.creator_org?.name || "Organization"
+        organizerType = "organization"
+      }
 
-      const authorMap = new Map(
-        authorsData?.map(author => [
-          author.id, 
-          {
-            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
-            avatarUrl: author.avatar_url
-          }
-        ]) || []
-      )
+      const visibilityMap: Record<string, string> = {
+        'public': 'Public',
+        'organization': 'Selected Orgs',
+        'department': 'Selected Depts',
+        'course': 'Selected Courses',
+        'mixed': 'Custom Group'
+      }
 
-      const mappedEvents: EventItem[] = eventsData.map((row: any) => {
-        const start = new Date(row.start_date)
-        const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        
-        let organizerName = "Unknown"
-        let organizerType = "user"
-        
-        if (row.creator_type === 'faith_admin') {
-          organizerName = "FAITH Administration"
-          organizerType = "faith" 
-        } else if (row.creator_type === 'organization') {
-          organizerName = row.creator_org?.name || "Organization"
-          organizerType = "organization"
-        }
+      const eventPosts = postsByEvent.get(row.id) || []
+      const posts = eventPosts.map((p: any) => {
+        // Determine display name and avatar based on posting identity
+        let displayName = 'Unknown User'
+        let displayAvatar = null
+        let displayAuthorType = 'user'
 
-        const visibilityMap: Record<string, string> = {
-          'public': 'Public',
-          'organization': 'Selected Orgs',
-          'department': 'Selected Depts',
-          'course': 'Selected Courses',
-          'mixed': 'Custom Group'
-        }
-
-        const eventPosts = postsByEvent.get(row.id) || []
-        const posts = eventPosts.map((p: any) => {
+        if (p.posted_as_type === 'faith_admin') {
+          displayName = 'FAITH Administration'
+          displayAvatar = null
+          displayAuthorType = 'faith_admin'
+        } else if (p.posted_as_type === 'organization' && p.posted_as_org_id) {
+          const orgData = orgMap.get(p.posted_as_org_id)
+          displayName = orgData?.name || 'Organization'
+          displayAvatar = orgData?.avatarUrl || null
+          displayAuthorType = 'organization'
+        } else {
+          // Default to user
           const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
-          return {
-            id: p.id,
-            author: authorData.name,
-            authorId: p.author_id,
-            authorType: "user",
-            avatarUrl: authorData.avatarUrl,
-            content: p.content || "",
-            time: new Date(p.created_at).toLocaleString('en-US', { 
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-            }),
-            likes: p.likes || 0,
-            comments: 0,
-            imageUrls: p.image_urls || []
-          }
-        })
+          displayName = authorData.name
+          displayAvatar = authorData.avatarUrl
+          displayAuthorType = 'user'
+        }
 
         return {
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          organizer: { type: organizerType, name: organizerName },
-          date: dateStr,
-          tags: row.tags || [],
-          visibility: visibilityMap[row.participant_type] || 'Restricted',
-          visibilityType: row.participant_type,
-          postingRestricted: row.who_can_post === 'officers',
-          isPinned: row.is_pinned,
-          participants: row.participant_count || 0,
-          totalPosts: row.post_count || 0,
-          posts: posts
+          id: p.id,
+          author: displayName,
+          authorId: p.author_id,
+          authorType: displayAuthorType,
+          avatarUrl: displayAvatar,
+          content: p.content || "",
+          time: new Date(p.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          }),
+          likes: p.likes || 0,
+          comments: 0,
+          imageUrls: p.image_urls || []
         }
       })
 
-      setEvents(mappedEvents)
-    } catch (err) {
-      console.error("Error loading events:", err)
-    }
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        organizer: { type: organizerType, name: organizerName },
+        date: dateStr,
+        tags: row.tags || [],
+        visibility: visibilityMap[row.participant_type] || 'Restricted',
+        visibilityType: row.participant_type,
+        postingRestricted: row.who_can_post === 'officers',
+        isPinned: row.is_pinned,
+        participants: row.participant_count || 0,
+        totalPosts: row.post_count || 0,
+        posts: posts
+      }
+    })
+
+    setEvents(mappedEvents)
+  } catch (err) {
+    console.error("Error loading events:", err)
   }
+}
 
   const loadAnnouncements = async () => {
     try {
