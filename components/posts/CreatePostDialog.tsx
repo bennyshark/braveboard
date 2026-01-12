@@ -78,13 +78,14 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           })
         }
 
-        // Get event's participant organizations
+        // Get event's participant type and organizations
         const { data: eventData } = await supabase
           .from('events')
-          .select('participant_orgs')
+          .select('participant_type, participant_orgs')
           .eq('id', eventId)
           .single()
 
+        const participantType = eventData?.participant_type
         const participantOrgIds = eventData?.participant_orgs || []
 
         // Get user's organizations where they're officer/admin
@@ -98,11 +99,21 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           .eq('user_id', user.id)
           .in('role', ['officer', 'admin'])
 
-        // Filter to only orgs that can participate in this event
-        if (userOrgs && participantOrgIds.length > 0) {
-          const eligibleOrgs = userOrgs.filter((uo: any) => 
-            participantOrgIds.includes(uo.organization_id)
-          )
+        if (userOrgs) {
+          let eligibleOrgs: any[]
+
+          // If participant_type is 'public', ALL user's orgs can post
+          if (participantType === 'public') {
+            eligibleOrgs = userOrgs
+          } 
+          // Otherwise, filter to only orgs in participant_orgs
+          else if (participantOrgIds.length > 0) {
+            eligibleOrgs = userOrgs.filter((uo: any) => 
+              participantOrgIds.includes(uo.organization_id)
+            )
+          } else {
+            eligibleOrgs = []
+          }
 
           eligibleOrgs.forEach((uo: any) => {
             identities.push({
