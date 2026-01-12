@@ -14,7 +14,9 @@ import { CreatePostDialog } from "@/components/posts/CreatePostDialog"
 type Post = {
   id: string
   author: string
+  authorId: string
   authorType: string
+  avatarUrl: string
   content: string
   time: string
   likes: number
@@ -43,7 +45,6 @@ type EventDetails = {
   isPinned: boolean
   participants: number
   totalPosts: number
-  // We replaced 'eventOfText' with structured data
   participantDetails: ParticipantData 
 }
 
@@ -213,7 +214,7 @@ export default function EventDetailsPage() {
         organizerType = "organization"
       }
 
-      // --- NEW LOGIC: Collect names into arrays instead of joining them string ---
+      // --- Collect participant names into arrays ---
       const orgNames: string[] = []
       const deptNames: string[] = []
       const courseNames: string[] = []
@@ -261,7 +262,6 @@ export default function EventDetailsPage() {
         isPinned: eventData.is_pinned,
         participants: eventData.participant_count || 0,
         totalPosts: eventData.post_count || 0,
-        // Store raw arrays
         participantDetails: {
           orgs: orgNames,
           depts: deptNames,
@@ -270,7 +270,7 @@ export default function EventDetailsPage() {
         }
       })
 
-      // Fetch posts (Logic unchanged)
+      // Fetch posts with author details
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('*')
@@ -279,26 +279,43 @@ export default function EventDetailsPage() {
 
       if (postsError) throw postsError
 
+      // Get unique author IDs
       const authorIds = [...new Set(postsData.map((p: any) => p.author_id))]
+      
+      // Fetch author profiles with avatar URLs
       const { data: authorsData } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, avatar_url')
         .in('id', authorIds)
 
+      // Create a map of author details
       const authorMap = new Map(
-        authorsData?.map(author => [author.id, `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`]) || []
+        authorsData?.map(author => [
+          author.id, 
+          {
+            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
+            avatarUrl: author.avatar_url || ''
+          }
+        ]) || []
       )
 
-      setPosts(postsData.map((post: any) => ({
-        id: post.id,
-        author: authorMap.get(post.author_id) || 'Unknown User',
-        authorType: 'user',
-        content: post.content,
-        time: new Date(post.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        likes: post.likes || 0,
-        comments: 0,
-        imageUrls: post.image_urls || []
-      })))
+      // Map posts with all required fields
+      setPosts(postsData.map((post: any) => {
+        const authorData = authorMap.get(post.author_id) || { name: 'Unknown User', avatarUrl: '' }
+        
+        return {
+          id: post.id,
+          author: authorData.name,
+          authorId: post.author_id,
+          authorType: 'user',
+          avatarUrl: authorData.avatarUrl,
+          content: post.content,
+          time: new Date(post.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          likes: post.likes || 0,
+          comments: 0,
+          imageUrls: post.image_urls || []
+        }
+      }))
 
     } catch (error) {
       console.error("Error loading event:", error)
@@ -383,7 +400,6 @@ export default function EventDetailsPage() {
                 <Users className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
                 <div className="w-full">
                   <div className="text-xs text-gray-500 font-medium">Event for</div>
-                  {/* Replaced text string with smart component */}
                   <ParticipantList data={event.participantDetails} />
                 </div>
               </div>
@@ -401,7 +417,7 @@ export default function EventDetailsPage() {
           </div>
         </div>
 
-        {/* Posts Section - (Same as before) */}
+        {/* Posts Section */}
         <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden">
           <div className="p-6 border-b border-gray-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
