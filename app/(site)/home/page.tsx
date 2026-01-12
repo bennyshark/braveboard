@@ -27,14 +27,12 @@ export default function HomePage() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // --- UI State ---
   const [activeFeedFilter, setActiveFeedFilter] = useState("feed")
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedAnnouncementSource, setSelectedAnnouncementSource] = useState<string | null>("all")
   const [hiddenEvents, setHiddenEvents] = useState<Set<string>>(new Set())
   const [searchTerm, setSearchTerm] = useState("")
   
-  // --- Data State ---
   const [events, setEvents] = useState<EventItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
@@ -42,7 +40,6 @@ export default function HomePage() {
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Function to load events
   const loadEvents = async () => {
     try {
       const { data: eventsData, error: eventsError } = await supabase
@@ -76,16 +73,20 @@ export default function HomePage() {
         }
       })
 
+      // Fetch author profiles with avatar URLs
       const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
       const { data: authorsData } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, avatar_url')
         .in('id', authorIds)
 
       const authorMap = new Map(
         authorsData?.map(author => [
           author.id, 
-          `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`
+          {
+            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
+            avatarUrl: author.avatar_url
+          }
         ]) || []
       )
 
@@ -113,18 +114,23 @@ export default function HomePage() {
         }
 
         const eventPosts = postsByEvent.get(row.id) || []
-        const posts = eventPosts.map((p: any) => ({
-          id: p.id,
-          author: authorMap.get(p.author_id) || 'Unknown User',
-          authorType: "user",
-          content: p.content || "",
-          time: new Date(p.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          }),
-          likes: p.likes || 0,
-          comments: 0,
-          imageUrls: p.image_urls || []
-        }))
+        const posts = eventPosts.map((p: any) => {
+          const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
+          return {
+            id: p.id,
+            author: authorData.name,
+            authorId: p.author_id,
+            authorType: "user",
+            avatarUrl: authorData.avatarUrl,
+            content: p.content || "",
+            time: new Date(p.created_at).toLocaleString('en-US', { 
+              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            }),
+            likes: p.likes || 0,
+            comments: 0,
+            imageUrls: p.image_urls || []
+          }
+        })
 
         return {
           id: row.id,
@@ -149,7 +155,6 @@ export default function HomePage() {
     }
   }
 
-  // Function to load announcements
   const loadAnnouncements = async () => {
     try {
       const { data: announcementsData, error } = await supabase
@@ -196,7 +201,6 @@ export default function HomePage() {
     }
   }
 
-  // Load all data
   useEffect(() => {
     async function loadData() {
       setIsLoading(true)
@@ -278,7 +282,6 @@ export default function HomePage() {
     })
   }
 
-  // --- FILTER LOGIC ---
   const filteredEvents = events.filter(event => {
     if (searchTerm && !event.title.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false
@@ -299,25 +302,22 @@ export default function HomePage() {
     }
 
     if (activeFeedFilter === "announcements") {
-      return false // Events don't show in announcements feed
+      return false
     }
 
-    return true // Campus feed shows all events
+    return true
   })
 
   const filteredAnnouncements = announcements.filter(announcement => {
-    // Announcements only show in campus feed and announcements feed
     if (activeFeedFilter === "org") {
-      return false // Don't show in org feed
+      return false
     }
 
     if (activeFeedFilter === "announcements") {
-      // Filter by selected source
       if (!selectedAnnouncementSource || selectedAnnouncementSource === "all") {
         return true
       }
       
-      // Map source IDs to organizer names
       const sourceMap: Record<string, string> = {
         "faith": "FAITH Administration",
         "sc": "Student Council",
@@ -328,7 +328,6 @@ export default function HomePage() {
       return announcement.organizerName === targetName
     }
 
-    // Show in campus feed
     return activeFeedFilter === "feed"
   })
 
@@ -395,14 +394,12 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {/* Show announcements first if in campus feed or announcements feed */}
             {(activeFeedFilter === "feed" || activeFeedFilter === "announcements") && 
               filteredAnnouncements.map(announcement => (
                 <AnnouncementCard key={announcement.id} announcement={announcement} />
               ))
             }
             
-            {/* Then show events (if not in announcements feed) */}
             {activeFeedFilter !== "announcements" && 
               filteredEvents.map(event => (
                 <EventCard 

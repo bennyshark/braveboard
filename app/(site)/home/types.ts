@@ -13,9 +13,11 @@ export type Organizer = {
 }
 
 export type Post = {
-  id: string // Changed from number to string (UUID)
+  id: string
   author: string
+  authorId: string
   authorType: string
+  avatarUrl: string | null
   content: string
   time: string
   likes: number

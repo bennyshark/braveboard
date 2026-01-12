@@ -30,6 +30,14 @@ export function PostCard({ post }: PostCardProps) {
     }
   }
 
+  const getInitials = (name: string) => {
+    const parts = name.split(' ')
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+    }
+    return name.substring(0, 2).toUpperCase()
+  }
+
   const handleImageClick = (index: number) => {
     setPreviewIndex(index)
     setPreviewOpen(true)
@@ -40,9 +48,17 @@ export function PostCard({ post }: PostCardProps) {
       <div className="bg-white rounded-xl border border-gray-300 p-4 hover:border-gray-400 transition-all">
         {/* Header */}
         <div className="flex items-start gap-3 mb-3">
-          <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getAuthorColor(post.authorType)} flex items-center justify-center text-lg flex-shrink-0 shadow-sm`}>
-            {getAuthorIcon(post.authorType)}
-          </div>
+          {post.avatarUrl ? (
+            <img 
+              src={post.avatarUrl} 
+              alt={post.author}
+              className="h-10 w-10 rounded-lg object-cover flex-shrink-0 shadow-sm"
+            />
+          ) : (
+            <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getAuthorColor(post.authorType)} flex items-center justify-center text-lg flex-shrink-0 shadow-sm`}>
+              <span className="text-white font-bold text-xs">{getInitials(post.author)}</span>
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div>
