@@ -195,24 +195,57 @@ function CreateEventForm() {
 
 
   // --- HANDLERS ---
-  useEffect(() => {
-    if (!dataLoaded) return
+// --- HANDLERS ---
+useEffect(() => {
+  if (!dataLoaded) return
 
-    if (creatorType === 'organization' && selectedCreatorOrg) {
-       if (participantType === 'public' || participantType === 'organization') {
-          setParticipantType('organization')
-          if (!partOrgs.includes(selectedCreatorOrg)) {
-             setPartOrgs([selectedCreatorOrg]) // Reset list to just this org
-          }
-       }
-    } else if (creatorType === 'faith_admin') {
-       if (participantType === 'organization') {
-          setParticipantType('public')
-          setPartOrgs([])
-       }
-    }
-  }, [creatorType, selectedCreatorOrg])
+  if (creatorType === 'organization' && selectedCreatorOrg) {
+     if (participantType === 'public' || participantType === 'organization') {
+        setParticipantType('organization')
+        if (!partOrgs.includes(selectedCreatorOrg)) {
+           setPartOrgs([selectedCreatorOrg]) // Reset list to just this org
+        }
+     }
+  } else if (creatorType === 'faith_admin') {
+     if (participantType === 'organization') {
+        setParticipantType('public')
+        setPartOrgs([])
+     }
+  }
+}, [creatorType, selectedCreatorOrg])
 
+// Reset participant selections when type changes
+useEffect(() => {
+  if (!dataLoaded) return
+  
+  // Reset ALL selections whenever participant type changes
+  if (participantType === 'public') {
+    setPartOrgs([])
+    setPartDepts([])
+    setPartCourses([])
+  } else if (participantType === 'organization' || participantType === 'mixed') {
+    // Keep creator org if applicable, clear everything else
+    const keepOrg = (creatorType === 'organization' && selectedCreatorOrg) ? [selectedCreatorOrg] : []
+    setPartOrgs(keepOrg)
+    setPartDepts([])
+    setPartCourses([])
+  } else {
+    // For department or course mode: clear EVERYTHING
+    setPartOrgs([])
+    setPartDepts([])
+    setPartCourses([])
+  }
+}, [participantType, dataLoaded])
+
+// Reset visibility selections when type changes
+useEffect(() => {
+  if (!dataLoaded) return
+  
+  // Reset ALL visibility selections whenever type changes
+  setVisOrgs([])
+  setVisDepts([])
+  setVisCourses([])
+}, [visibilityType, dataLoaded])
   const addTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
       setTags([...tags, tagInput.trim()])

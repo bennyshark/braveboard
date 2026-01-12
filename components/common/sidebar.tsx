@@ -13,8 +13,7 @@ import {
   User,
   Bookmark,
   LogOut,
-  Shield,
-  Upload
+  Shield
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
@@ -27,7 +26,6 @@ export default function Sidebar() {
   const router = useRouter()
   const pathname = usePathname()
 
-  // Base menu items for all users
   const baseMenuItems = [
     { id: "home", label: "Home", icon: Home, path: "/home" },
     { id: "calendar", label: "Calendar", icon: Calendar, path: "/calendar" },
@@ -38,12 +36,10 @@ export default function Sidebar() {
     { id: "organizations", label: "Organizations", icon: Users, path: "/organizations" },
   ]
 
-  // Admin menu items (only shown to admins)
   const adminMenuItems = [
     { id: "admin", label: "Admin", icon: Shield, path: "/admin/import-profiles" }
   ]
 
-  // Combine menu items based on user role
   const getMenuItems = () => {
     if (userProfile?.role === 'admin') {
       return [...baseMenuItems, ...adminMenuItems]
@@ -89,12 +85,10 @@ export default function Sidebar() {
     router.push(path)
   }
 
-  // Check if a menu item is active
   const isActive = (path: string) => {
     return pathname === path || pathname?.startsWith(path)
   }
 
-  // Generate initials: first name + first letter of last name
   const getInitials = () => {
     if (!userProfile?.first_name && !userProfile?.last_name) return "U"
     
@@ -111,7 +105,6 @@ export default function Sidebar() {
     return "U"
   }
 
-  // Get display name
   const getDisplayName = () => {
     if (userProfile?.first_name && userProfile?.last_name) {
       return `${userProfile.first_name} ${userProfile.last_name}`
@@ -123,7 +116,6 @@ export default function Sidebar() {
     return "User"
   }
 
-  // Get department or role
   const getDepartment = () => {
     if (userProfile?.department_code) {
       return userProfile.department_code
@@ -136,7 +128,6 @@ export default function Sidebar() {
   return (
     <aside className="h-full w-full bg-[#FDFCF8] px-4 py-6 border-r border-stone-100">
       <div className="h-full flex flex-col">
-        {/* Main Navigation */}
         <div className="flex-1 overflow-y-auto scrollbar-hide">
           <div className="mb-8">
             <h3 className="flex items-center gap-2 text-xs font-bold text-stone-400 uppercase tracking-widest mb-4 px-4">
@@ -171,7 +162,6 @@ export default function Sidebar() {
             </div>
           </div>
 
-          {/* Account Section */}
           <div>
             <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4 px-4 pt-4 border-t border-dashed border-stone-200">
               Account
@@ -213,17 +203,27 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* User Profile Footer - Card Style */}
+        {/* User Profile Footer with Avatar */}
         <div className="pt-4 mt-2">
           <div className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-stone-100 shadow-sm cursor-pointer hover:border-blue-200 transition-colors">
-            <div className={`h-10 w-10 rounded-xl flex items-center justify-center shadow-inner ${
-              userProfile?.role === 'admin' 
-                ? 'bg-gradient-to-br from-purple-400 to-purple-600' 
-                : 'bg-gradient-to-br from-orange-300 to-orange-500'
-            }`}>
-              <span className="text-white font-bold text-sm">
-                {loading ? "..." : getInitials()}
-              </span>
+            <div className="relative">
+              {userProfile?.avatar_url ? (
+                <img 
+                  src={userProfile.avatar_url} 
+                  alt={getDisplayName()}
+                  className="h-10 w-10 rounded-xl object-cover shadow-inner"
+                />
+              ) : (
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shadow-inner ${
+                  userProfile?.role === 'admin' 
+                    ? 'bg-gradient-to-br from-purple-400 to-purple-600' 
+                    : 'bg-gradient-to-br from-orange-300 to-orange-500'
+                }`}>
+                  <span className="text-white font-bold text-sm">
+                    {loading ? "..." : getInitials()}
+                  </span>
+                </div>
+              )}
               {userProfile?.role === 'admin' && (
                 <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center">
                   <Shield className="h-2 w-2 text-white" />

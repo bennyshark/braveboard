@@ -13,9 +13,11 @@ export type Organizer = {
 }
 
 export type Post = {
-  id: number // Keep as number if posts table isn't set up yet, or change to string later
+  id: string
   author: string
+  authorId: string
   authorType: string
+  avatarUrl: string | null
   content: string
   time: string
   likes: number
@@ -24,10 +26,10 @@ export type Post = {
 }
 
 export type EventItem = {
-  id: string // CHANGED: UUID from Supabase is a string
+  id: string
   title: string
   organizer: Organizer
-  description?: string // Added optional description
+  description?: string
   date: string
   tags: string[]
   visibility: string
