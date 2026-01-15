@@ -40,8 +40,6 @@ export default function HomePage() {
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-// Update this section in app/(site)/home/page.tsx
-// Replace the loadEvents function with this updated version
 
 const loadEvents = async () => {
   try {
@@ -58,10 +56,10 @@ const loadEvents = async () => {
 
     const eventIds = eventsData.map((e: any) => e.id)
     
-    // Updated query to include posting identity fields
+    // Updated query to include comments count and posting identity fields
     const { data: allPosts, error: postsError } = await supabase
       .from('posts')
-      .select('*, posted_as_type, posted_as_org_id')
+      .select('*, posted_as_type, posted_as_org_id, comments')  // ← Added 'comments' field
       .in('event_id', eventIds)
       .order('created_at', { ascending: false })
 
@@ -175,7 +173,7 @@ const loadEvents = async () => {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           }),
           likes: p.likes || 0,
-          comments: 0,
+          comments: p.comments || 0,  // ← Now includes comment count
           imageUrls: p.image_urls || []
         }
       })
@@ -202,7 +200,6 @@ const loadEvents = async () => {
     console.error("Error loading events:", err)
   }
 }
-
   const loadAnnouncements = async () => {
     try {
       const { data: announcementsData, error } = await supabase

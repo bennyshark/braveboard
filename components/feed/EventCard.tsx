@@ -19,14 +19,14 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
   const router = useRouter()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
   const [eventOfText, setEventOfText] = useState("Loading...")
-  const visiblePosts = isPostsHidden ? [] : event.posts.slice(0, 3)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // Fetch and format "Event of" text
+  const visiblePosts = isPostsHidden ? [] : event.posts.slice(0, 3)
+
   useEffect(() => {
     async function fetchEventOfText() {
       try {
@@ -101,7 +101,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
   return (
     <>
       <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
-        {/* Card Header - Professional unified design */}
         <div 
           className="relative bg-gradient-to-br from-gray-50 to-white cursor-pointer group"
           onClick={handleCardClick}
@@ -115,7 +114,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
           <div className="p-6">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div className="flex-1 min-w-0">
-                {/* Event Title */}
                 <div className="flex items-start gap-2 mb-3">
                   <h4 className="text-2xl font-black text-gray-900 leading-tight flex-1">
                     {event.title}
@@ -123,7 +121,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
                   <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all flex-shrink-0 mt-1" />
                 </div>
                 
-                {/* Organizer Badge */}
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${
                     event.organizer.type === 'faith' 
@@ -135,7 +132,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
                   </span>
                 </div>
 
-                {/* Event Meta Information */}
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
                   <span className="flex items-center gap-2 font-medium">
                     <Calendar className="h-4 w-4 text-gray-400" />
@@ -157,11 +153,8 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
               </button>
             </div>
 
-            {/* Footer Controls */}
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-              <button 
-                className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 group/btn"
-              >
+              <button className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 group/btn">
                 View Full Event
                 <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
               </button>
@@ -185,7 +178,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
           </div>
         </div>
 
-        {/* Posts Section */}
         {!isPostsHidden && (
           <div className="bg-gray-50 border-t-2 border-gray-200">
             <div className="p-6 space-y-4">
@@ -199,7 +191,7 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
               {visiblePosts.length > 0 ? (
                 <div className="space-y-3">
                   {visiblePosts.map((post) => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCard key={post.id} post={post} eventId={event.id} />
                   ))}
                 </div>
               ) : (
@@ -220,7 +212,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
         )}
       </div>
 
-      {/* Create Post Dialog */}
       <CreatePostDialog
         isOpen={isCreatePostOpen}
         onClose={() => setIsCreatePostOpen(false)}

@@ -21,7 +21,7 @@ export type Post = {
   content: string
   time: string
   likes: number
-  comments: number
+  comments: number  // ← Make sure this field exists
   imageUrls: string[]
 }
 

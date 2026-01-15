@@ -10,7 +10,6 @@ import { createBrowserClient } from "@supabase/ssr"
 import { PostCard } from "@/components/feed/PostCard"
 import { CreatePostDialog } from "@/components/posts/CreatePostDialog"
 
-// --- TYPES ---
 type Post = {
   id: string
   author: string
@@ -48,9 +47,6 @@ type EventDetails = {
   participantDetails: ParticipantData 
 }
 
-// --- SUB-COMPONENTS ---
-
-// 1. Modal to show full list if there are too many items
 const ParticipantModal = ({ 
   isOpen, 
   onClose, 
@@ -125,7 +121,6 @@ const ParticipantModal = ({
   )
 }
 
-// 2. The summary display component
 const ParticipantList = ({ data }: { data: ParticipantData }) => {
   const [showModal, setShowModal] = useState(false)
 
@@ -133,7 +128,6 @@ const ParticipantList = ({ data }: { data: ParticipantData }) => {
     return <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-md">Public (All FAITH)</span>
   }
 
-  // Combine all names for the "preview" view
   const allItems = [
     ...data.orgs.map(n => ({ name: n, color: 'bg-blue-100 text-blue-800' })),
     ...data.depts.map(n => ({ name: n, color: 'bg-emerald-100 text-emerald-800' })),
@@ -171,8 +165,6 @@ const ParticipantList = ({ data }: { data: ParticipantData }) => {
   )
 }
 
-
-// --- MAIN PAGE ---
 export default function EventDetailsPage() {
   const params = useParams()
   const router = useRouter()
@@ -191,7 +183,6 @@ export default function EventDetailsPage() {
   const loadEventData = async () => {
     setIsLoading(true)
     try {
-      // Fetch event details
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select(`*, creator_org:organizations(name)`)
@@ -214,13 +205,11 @@ export default function EventDetailsPage() {
         organizerType = "organization"
       }
 
-      // --- Collect participant names into arrays ---
       const orgNames: string[] = []
       const deptNames: string[] = []
       const courseNames: string[] = []
 
       if (eventData.participant_type !== 'public') {
-        // Fetch organization names
         if (eventData.participant_orgs?.length > 0) {
           const { data: orgs } = await supabase
             .from('organizations')
@@ -229,7 +218,6 @@ export default function EventDetailsPage() {
           if (orgs) orgNames.push(...orgs.map((o: any) => o.name))
         }
 
-        // Fetch department names
         if (eventData.participant_depts?.length > 0) {
           const { data: depts } = await supabase
             .from('departments')
@@ -238,7 +226,6 @@ export default function EventDetailsPage() {
           if (depts) deptNames.push(...depts.map((d: any) => d.name))
         }
 
-        // Fetch course names
         if (eventData.participant_courses?.length > 0) {
           const { data: courses } = await supabase
             .from('courses')
@@ -270,7 +257,6 @@ export default function EventDetailsPage() {
         }
       })
 
-      // Fetch posts with author details
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('*')
@@ -279,16 +265,13 @@ export default function EventDetailsPage() {
 
       if (postsError) throw postsError
 
-      // Get unique author IDs
       const authorIds = [...new Set(postsData.map((p: any) => p.author_id))]
       
-      // Fetch author profiles with avatar URLs
       const { data: authorsData } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, avatar_url')
         .in('id', authorIds)
 
-      // Create a map of author details
       const authorMap = new Map(
         authorsData?.map(author => [
           author.id, 
@@ -299,7 +282,6 @@ export default function EventDetailsPage() {
         ]) || []
       )
 
-      // Map posts with all required fields
       setPosts(postsData.map((post: any) => {
         const authorData = authorMap.get(post.author_id) || { name: 'Unknown User', avatarUrl: '' }
         
@@ -312,7 +294,7 @@ export default function EventDetailsPage() {
           content: post.content,
           time: new Date(post.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
           likes: post.likes || 0,
-          comments: 0,
+          comments: post.comments || 0,
           imageUrls: post.image_urls || []
         }
       }))
@@ -345,7 +327,6 @@ export default function EventDetailsPage() {
           <ArrowLeft className="h-5 w-5" /> Back
         </button>
 
-        {/* Event Header */}
         <div className={`rounded-2xl border-2 overflow-hidden mb-6 transition-colors ${
           event.organizerType === 'faith' 
             ? 'bg-gradient-to-br from-purple-50 via-purple-50 to-indigo-50 border-purple-200' 
@@ -370,7 +351,6 @@ export default function EventDetailsPage() {
 
             {event.description && <p className="text-gray-700 text-lg mb-6 leading-relaxed">{event.description}</p>}
 
-            {/* Event Details Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div className="flex items-center gap-3 bg-white/60 p-3 rounded-lg border border-white/50">
                 <Calendar className="h-5 w-5 text-gray-600 flex-shrink-0" />
@@ -417,7 +397,6 @@ export default function EventDetailsPage() {
           </div>
         </div>
 
-        {/* Posts Section */}
         <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden">
           <div className="p-6 border-b border-gray-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -430,7 +409,7 @@ export default function EventDetailsPage() {
           </div>
 
           <div className="p-6 space-y-4">
-            {posts.length > 0 ? posts.map(post => <PostCard key={post.id} post={post} />) : (
+            {posts.length > 0 ? posts.map(post => <PostCard key={post.id} post={post} eventId={eventId} />) : (
               <div className="text-center py-12">
                 <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500 font-medium mb-4">No posts yet</p>
