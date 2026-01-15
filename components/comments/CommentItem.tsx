@@ -1,6 +1,8 @@
 // components/comments/CommentItem.tsx
 "use client"
-import { ThumbsUp, Reply, Shield, Users, Clock, MoreVertical, CornerDownRight } from "lucide-react"
+import { useState } from "react"
+import { ThumbsUp, Reply, Shield, Users, Clock, MoreVertical, CornerDownRight, ChevronDown, ChevronUp } from "lucide-react"
+import { InlineCommentBox } from "./InlineCommentBox"
 
 type Comment = {
   id: string
@@ -20,12 +22,25 @@ type Comment = {
 
 interface CommentItemProps {
   comment: Comment
-  onReply: (commentId: string, authorName: string) => void
+  postId: string
+  eventId: string
+  onCommentCreated: () => void
   isReply?: boolean
   isInModal?: boolean
 }
 
-export function CommentItem({ comment, onReply, isReply = false, isInModal = false }: CommentItemProps) {
+export function CommentItem({ 
+  comment, 
+  postId,
+  eventId,
+  onCommentCreated,
+  isReply = false, 
+  isInModal = false 
+}: CommentItemProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [showReplyBox, setShowReplyBox] = useState(false)
+  const hasReplies = comment.replies.length > 0
+
   const getIdentityIcon = (type: string) => {
     switch(type) {
       case 'faith_admin': return <Shield className="h-3 w-3 text-purple-600" />
@@ -68,6 +83,15 @@ export function CommentItem({ comment, onReply, isReply = false, isInModal = fal
       case 'organization': return 'from-orange-400 to-orange-600'
       default: return 'from-blue-400 to-blue-600'
     }
+  }
+
+  const handleReplyClick = () => {
+    setShowReplyBox(!showReplyBox)
+  }
+
+  const handleReplyCreated = () => {
+    setShowReplyBox(false)
+    onCommentCreated()
   }
 
   return (
@@ -133,25 +157,65 @@ export function CommentItem({ comment, onReply, isReply = false, isInModal = fal
                 {comment.likes}
               </button>
               <button 
-                onClick={() => onReply(comment.id, comment.authorName)}
-                className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors text-xs font-bold"
+                onClick={handleReplyClick}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-xs font-bold ${
+                  showReplyBox 
+                    ? 'text-green-700 bg-green-100' 
+                    : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
+                }`}
               >
                 <Reply className="h-3 w-3" />
                 Reply
               </button>
+              
+              {/* Collapse/Expand button for replies */}
+              {hasReplies && (
+                <button
+                  onClick={() => setIsCollapsed(!isCollapsed)}
+                  className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors text-xs font-bold ml-auto"
+                >
+                  {isCollapsed ? (
+                    <>
+                      <ChevronDown className="h-3 w-3" />
+                      Show {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="h-3 w-3" />
+                      Hide {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Inline Reply Box */}
+      {showReplyBox && (
+        <div className="mt-3 ml-8">
+          <InlineCommentBox
+            postId={postId}
+            eventId={eventId}
+            parentCommentId={comment.id}
+            replyingTo={comment.authorName}
+            onCancel={() => setShowReplyBox(false)}
+            onCommentCreated={handleReplyCreated}
+          />
+        </div>
+      )}
       
-      {/* Nested Replies */}
-      {comment.replies.length > 0 && (
+      {/* Nested Replies - Collapsible */}
+      {hasReplies && !isCollapsed && (
         <div className="space-y-3 mt-3">
           {comment.replies.map(reply => (
             <CommentItem 
               key={reply.id} 
-              comment={reply} 
-              onReply={onReply}
+              comment={reply}
+              postId={postId}
+              eventId={eventId}
+              onCommentCreated={onCommentCreated}
               isReply={true} 
               isInModal={isInModal}
             />

@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
-import { CreateCommentDialog } from "./CreateCommentDialog"
 import { CommentItem } from "./CommentItem"
+import { InlineCommentBox } from "./InlineCommentBox"
 import { AllCommentsModal } from "./AllCommentsModal"
 
 interface CommentSectionProps {
@@ -32,8 +32,7 @@ type Comment = {
 export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
-  const [isCreateCommentOpen, setIsCreateCommentOpen] = useState(false)
-  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null)
+  const [showCommentBox, setShowCommentBox] = useState(false)
   const [showAllModal, setShowAllModal] = useState(false)
   
   const supabase = createBrowserClient(
@@ -87,7 +86,6 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         ]) || []
       )
 
-      // Create a map to easily find parent comment names
       const commentNameMap = new Map<string, string>()
 
       const mappedComments: Comment[] = commentsData.map((c: any) => {
@@ -106,7 +104,6 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
           displayAvatar = authorData?.avatarUrl || null
         }
 
-        // Store in map for later lookup
         commentNameMap.set(c.id, displayName)
 
         return {
@@ -128,13 +125,11 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         }
       })
 
-      // Build the reply tree and add "replying to" names
       const topLevelComments = mappedComments.filter(c => !c.parentCommentId)
       const repliesMap = new Map<string, Comment[]>()
       
       mappedComments.forEach(comment => {
         if (comment.parentCommentId) {
-          // Set the "replying to" name
           comment.replyingToName = commentNameMap.get(comment.parentCommentId) || 'Unknown'
           
           if (!repliesMap.has(comment.parentCommentId)) {
@@ -144,7 +139,6 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         }
       })
 
-      // Recursively attach replies
       const attachReplies = (comment: Comment) => {
         const replies = repliesMap.get(comment.id) || []
         comment.replies = replies
@@ -166,35 +160,25 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
     loadComments()
   }, [postId])
 
-  const handleReply = (commentId: string, authorName: string) => {
-    setReplyingTo({ id: commentId, name: authorName })
-    setIsCreateCommentOpen(true)
+  const handleCommentCreated = () => {
+    setShowCommentBox(false)
+    loadComments()
   }
 
-  const handleCloseDialog = () => {
-    setIsCreateCommentOpen(false)
-    setReplyingTo(null)
-  }
-
-  // Smart preview logic
   const getPreviewComments = () => {
     if (comments.length === 0) return []
     
     const preview: Comment[] = []
     
-    // 1. Get most recent comment with up to 3 of its most recent replies
     const mostRecentComment = { ...comments[comments.length - 1] }
     if (mostRecentComment.replies.length > 0) {
-      // Show only the 3 most recent replies
       const recentReplies = mostRecentComment.replies.slice(-3)
       mostRecentComment.replies = recentReplies
     }
     preview.push(mostRecentComment)
     
-    // 2. Get 2 more most recent comments (without their full reply chains for brevity)
     if (comments.length > 1) {
       const secondRecent = { ...comments[comments.length - 2] }
-      // Don't show nested replies in preview for these
       secondRecent.replies = []
       preview.unshift(secondRecent)
     }
@@ -205,7 +189,7 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
       preview.unshift(thirdRecent)
     }
     
-    return preview.reverse() // Show in chronological order
+    return preview.reverse()
   }
 
   const totalCommentCount = () => {
@@ -231,12 +215,26 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
             Comments ({totalCount})
           </h4>
           <button
-            onClick={() => setIsCreateCommentOpen(true)}
-            className="text-xs font-bold text-blue-600 hover:text-blue-700 px-3 py-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+            onClick={() => setShowCommentBox(!showCommentBox)}
+            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+              showCommentBox
+                ? 'bg-blue-100 text-blue-700'
+                : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+            }`}
           >
-            Add Comment
+            {showCommentBox ? 'Cancel' : 'Add Comment'}
           </button>
         </div>
+
+        {/* Top-level comment box */}
+        {showCommentBox && (
+          <InlineCommentBox
+            postId={postId}
+            eventId={eventId}
+            onCancel={() => setShowCommentBox(false)}
+            onCommentCreated={handleCommentCreated}
+          />
+        )}
 
         {loading ? (
           <div className="flex justify-center py-8">
@@ -247,8 +245,10 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
             {previewComments.map(comment => (
               <CommentItem 
                 key={comment.id} 
-                comment={comment} 
-                onReply={handleReply}
+                comment={comment}
+                postId={postId}
+                eventId={eventId}
+                onCommentCreated={loadComments}
               />
             ))}
             
@@ -270,22 +270,15 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         )}
       </div>
 
-      <CreateCommentDialog
-        isOpen={isCreateCommentOpen}
-        onClose={handleCloseDialog}
-        postId={postId}
-        eventId={eventId}
-        parentCommentId={replyingTo?.id || null}
-        replyingTo={replyingTo?.name || null}
-        onCommentCreated={loadComments}
-      />
-
+      {/* All Comments Modal */}
       <AllCommentsModal
         isOpen={showAllModal}
         onClose={() => setShowAllModal(false)}
         comments={comments}
         totalCount={totalCount}
-        onReply={handleReply}
+        postId={postId}
+        eventId={eventId}
+        onCommentCreated={loadComments}
       />
     </>
   )

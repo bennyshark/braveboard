@@ -1,7 +1,7 @@
 // components/feed/PostCard.tsx
 "use client"
 import { useState, useEffect } from "react"
-import { MessageCircle, Share2, Clock, Image, MoreVertical, Shield, Users } from "lucide-react"
+import { MessageCircle, Share2, Clock, Image, MoreVertical, Shield, Users, ChevronDown, ChevronUp } from "lucide-react"
 import { Post } from "@/app/(site)/home/types"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
@@ -21,6 +21,7 @@ type PostIdentity = {
 export function PostCard({ post, eventId }: PostCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
+  const [showComments, setShowComments] = useState(true)
   const [commentCount, setCommentCount] = useState(post.comments)
   const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>({
     type: 'user',
@@ -238,18 +239,30 @@ export function PostCard({ post, eventId }: PostCardProps) {
               <span className="text-base">👍</span>
               <span className="text-xs font-bold">{post.likes}</span>
             </button>
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-blue-600 bg-blue-50 rounded-lg">
+            <button 
+              onClick={() => setShowComments(!showComments)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
+                showComments 
+                  ? 'bg-blue-100 text-blue-700' 
+                  : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
+              }`}
+            >
               <MessageCircle className="h-3.5 w-3.5" />
               <span className="text-xs font-bold">{commentCount}</span>
-            </div>
+              {showComments ? (
+                <ChevronUp className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+            </button>
             <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
               <Share2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
 
-        {/* Comment Section - Always Visible */}
-        {postEventId && (
+        {/* Comment Section - Collapsible */}
+        {showComments && postEventId && (
           <div className="border-t border-gray-200 p-4 bg-gray-50">
             <CommentSection 
               postId={post.id} 

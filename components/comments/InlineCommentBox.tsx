@@ -1,16 +1,15 @@
-// components/comments/CreateCommentDialog.tsx
+// components/comments/InlineCommentBox.tsx
 "use client"
 import { useState, useRef, useEffect } from "react"
 import { X, Image as ImageIcon, Loader2, Send, User, Shield, Users, ChevronDown } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 
-interface CreateCommentDialogProps {
-  isOpen: boolean
-  onClose: () => void
+interface InlineCommentBoxProps {
   postId: string
   eventId: string
   parentCommentId?: string | null
   replyingTo?: string | null
+  onCancel: () => void
   onCommentCreated?: () => void
 }
 
@@ -21,15 +20,14 @@ type CommentingIdentity = {
   icon: 'user' | 'org' | 'faith'
 }
 
-export function CreateCommentDialog({ 
-  isOpen, 
-  onClose, 
+export function InlineCommentBox({ 
   postId, 
   eventId,
   parentCommentId = null,
   replyingTo = null,
+  onCancel,
   onCommentCreated 
-}: CreateCommentDialogProps) {
+}: InlineCommentBoxProps) {
   const [content, setContent] = useState("")
   const [image, setImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -37,6 +35,7 @@ export function CreateCommentDialog({
   const [showIdentityDropdown, setShowIdentityDropdown] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const [availableIdentities, setAvailableIdentities] = useState<CommentingIdentity[]>([])
   const [selectedIdentity, setSelectedIdentity] = useState<CommentingIdentity | null>(null)
@@ -47,9 +46,12 @@ export function CreateCommentDialog({
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
+  // Auto-focus textarea on mount
   useEffect(() => {
-    if (!isOpen) return
-    
+    textareaRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
     async function fetchIdentities() {
       try {
         setLoading(true)
@@ -136,7 +138,7 @@ export function CreateCommentDialog({
     }
 
     fetchIdentities()
-  }, [isOpen, eventId, supabase])
+  }, [eventId, supabase])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -217,7 +219,7 @@ export function CreateCommentDialog({
       setImagePreview(null)
       
       if (onCommentCreated) onCommentCreated()
-      onClose()
+      onCancel()
       
     } catch (error: any) {
       console.error("Error creating comment:", error)
@@ -229,9 +231,9 @@ export function CreateCommentDialog({
 
   const getIdentityIcon = (icon: string) => {
     switch(icon) {
-      case 'faith': return <Shield className="h-5 w-5 text-purple-600" />
-      case 'org': return <Users className="h-5 w-5 text-orange-600" />
-      default: return <User className="h-5 w-5 text-blue-600" />
+      case 'faith': return <Shield className="h-4 w-4 text-purple-600" />
+      case 'org': return <Users className="h-4 w-4 text-orange-600" />
+      default: return <User className="h-4 w-4 text-blue-600" />
     }
   }
 
@@ -243,107 +245,110 @@ export function CreateCommentDialog({
     }
   }
 
-  if (!isOpen) return null
+  if (loading) {
+    return (
+      <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+        <div className="flex items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl">
-        
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div>
-            <h3 className="text-xl font-black text-gray-900">
-              {parentCommentId ? 'Reply to Comment' : 'Add Comment'}
-            </h3>
-            {replyingTo && (
-              <p className="text-xs text-gray-500 mt-1">Replying to {replyingTo}</p>
-            )}
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-all">
-            <X className="h-5 w-5 text-gray-500" />
+    <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 space-y-3 animate-in slide-in-from-top-2 duration-200">
+      {/* Reply indicator */}
+      {replyingTo && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-blue-700 font-medium">
+            Replying to <span className="font-bold">{replyingTo}</span>
+          </p>
+          <button
+            onClick={onCancel}
+            className="p-1 hover:bg-blue-200 rounded transition-colors"
+          >
+            <X className="h-4 w-4 text-blue-600" />
           </button>
         </div>
+      )}
 
-        <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-200px)]">
-          
-          {!loading && availableIdentities.length > 1 && (
-            <div className="relative" ref={dropdownRef}>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Commenting as:
-              </label>
-              <button
-                onClick={() => setShowIdentityDropdown(!showIdentityDropdown)}
-                className="w-full flex items-center justify-between gap-3 p-3 bg-gray-50 border-2 border-gray-200 rounded-xl hover:border-gray-300 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 ${getIdentityBgColor(selectedIdentity?.icon || 'user')} rounded-lg`}>
-                    {getIdentityIcon(selectedIdentity?.icon || 'user')}
+      {/* Identity selector */}
+      {availableIdentities.length > 1 && (
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setShowIdentityDropdown(!showIdentityDropdown)}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-blue-200 rounded-lg hover:border-blue-300 transition-all text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 ${getIdentityBgColor(selectedIdentity?.icon || 'user')} rounded`}>
+                {getIdentityIcon(selectedIdentity?.icon || 'user')}
+              </div>
+              <span className="font-medium text-gray-900">{selectedIdentity?.name}</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showIdentityDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-blue-200 rounded-lg shadow-xl z-10 overflow-hidden">
+              {availableIdentities.map((identity, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    setSelectedIdentity(identity)
+                    setShowIdentityDropdown(false)
+                  }}
+                  className="w-full flex items-center gap-2 p-2.5 hover:bg-blue-50 transition-colors text-left"
+                >
+                  <div className={`p-1.5 ${getIdentityBgColor(identity.icon)} rounded`}>
+                    {getIdentityIcon(identity.icon)}
                   </div>
-                  <span className="font-bold text-gray-900">{selectedIdentity?.name}</span>
-                </div>
-                <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showIdentityDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-10 overflow-hidden">
-                  {availableIdentities.map((identity, index) => (
-                    <button
-                      key={index}
-                      onClick={() => {
-                        setSelectedIdentity(identity)
-                        setShowIdentityDropdown(false)
-                      }}
-                      className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors text-left"
-                    >
-                      <div className={`p-2 ${getIdentityBgColor(identity.icon)} rounded-lg`}>
-                        {getIdentityIcon(identity.icon)}
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-900">{identity.name}</div>
-                        <div className="text-xs text-gray-500 capitalize">{identity.type.replace('_', ' ')}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+                  <div>
+                    <div className="font-medium text-gray-900 text-sm">{identity.name}</div>
+                    <div className="text-xs text-gray-500 capitalize">{identity.type.replace('_', ' ')}</div>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
+        </div>
+      )}
 
-          {loading && (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-            </div>
-          )}
-          
-          <div>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Write your comment..."
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl resize-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none text-gray-900"
-              rows={4}
-              maxLength={2000}
-            />
-            <div className="text-right text-xs text-gray-500 mt-1">
-              {content.length} / 2000
-            </div>
-          </div>
+      {/* Text area */}
+      <textarea
+        ref={textareaRef}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="Write your comment..."
+        className="w-full px-3 py-2 border border-blue-200 rounded-lg resize-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none text-gray-900 text-sm"
+        rows={3}
+        maxLength={2000}
+      />
 
-          {imagePreview && (
-            <div className="relative inline-block">
-              <img 
-                src={imagePreview} 
-                alt="Preview" 
-                className="w-full max-w-sm rounded-xl border-2 border-gray-200" 
-              />
-              <button
-                onClick={removeImage}
-                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+      {/* Character count */}
+      <div className="flex justify-between items-center text-xs text-gray-500">
+        <span>{content.length} / 2000</span>
+      </div>
 
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="relative inline-block">
+          <img 
+            src={imagePreview} 
+            alt="Preview" 
+            className="w-full max-w-[200px] rounded-lg border-2 border-blue-200" 
+          />
+          <button
+            onClick={removeImage}
+            className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -351,39 +356,38 @@ export function CreateCommentDialog({
             onChange={handleImageSelect}
             className="hidden"
           />
-          
           {!image && (
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl text-gray-700 hover:text-blue-700 font-bold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 hover:border-blue-300 rounded-lg text-sm font-medium text-gray-700 transition-all"
             >
-              <ImageIcon className="h-4 w-4" />
-              Add Image (Optional)
+              <ImageIcon className="h-3.5 w-3.5" />
+              Image
             </button>
           )}
         </div>
 
-        <div className="flex gap-3 p-6 border-t border-gray-200">
+        <div className="flex gap-2">
           <button
-            onClick={onClose}
+            onClick={onCancel}
             disabled={isSubmitting}
-            className="flex-1 py-3 px-4 bg-white border-2 border-gray-300 rounded-xl font-bold text-gray-700 hover:bg-gray-50 transition-all disabled:opacity-50"
+            className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={isSubmitting || (!content.trim() && !image) || !selectedIdentity}
-            className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Posting...
               </>
             ) : (
               <>
-                <Send className="h-4 w-4" />
+                <Send className="h-3.5 w-3.5" />
                 {parentCommentId ? 'Reply' : 'Comment'}
               </>
             )}

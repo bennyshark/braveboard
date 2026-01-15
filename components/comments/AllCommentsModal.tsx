@@ -24,7 +24,9 @@ interface AllCommentsModalProps {
   onClose: () => void
   comments: Comment[]
   totalCount: number
-  onReply: (commentId: string, authorName: string) => void
+  postId: string
+  eventId: string
+  onCommentCreated: () => void
 }
 
 export function AllCommentsModal({ 
@@ -32,7 +34,9 @@ export function AllCommentsModal({
   onClose, 
   comments, 
   totalCount,
-  onReply 
+  postId,
+  eventId,
+  onCommentCreated
 }: AllCommentsModalProps) {
   if (!isOpen) return null
 
@@ -66,8 +70,10 @@ export function AllCommentsModal({
               {comments.map(comment => (
                 <CommentItem 
                   key={comment.id} 
-                  comment={comment} 
-                  onReply={onReply}
+                  comment={comment}
+                  postId={postId}
+                  eventId={eventId}
+                  onCommentCreated={onCommentCreated}
                   isInModal={true}
                 />
               ))}
