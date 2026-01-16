@@ -1,7 +1,17 @@
 // components/comments/CommentItem.tsx
 "use client"
 import { useState } from "react"
-import { ThumbsUp, Reply, Shield, Users, Clock, MoreVertical, CornerDownRight, ChevronDown, ChevronUp } from "lucide-react"
+import { 
+  ThumbsUp, 
+  Reply, 
+  Shield, 
+  Users, 
+  Clock, 
+  MoreVertical, 
+  CornerUpLeft, 
+  ChevronDown, 
+  ChevronUp 
+} from "lucide-react"
 import { InlineCommentBox } from "./InlineCommentBox"
 
 type Comment = {
@@ -25,8 +35,7 @@ interface CommentItemProps {
   postId: string
   eventId: string
   onCommentCreated: () => void
-  isReply?: boolean
-  isInModal?: boolean
+  depth?: number
 }
 
 export function CommentItem({ 
@@ -34,12 +43,15 @@ export function CommentItem({
   postId,
   eventId,
   onCommentCreated,
-  isReply = false, 
-  isInModal = false 
+  depth = 0
 }: CommentItemProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showReplyBox, setShowReplyBox] = useState(false)
   const hasReplies = comment.replies.length > 0
+  
+  // Only apply indentation styling if this is the FIRST level of reply (depth 1).
+  // Nested replies will sit inside this container naturally.
+  const isFirstLevelReply = depth === 1
 
   const getIdentityIcon = (type: string) => {
     switch(type) {
@@ -94,9 +106,43 @@ export function CommentItem({
     onCommentCreated()
   }
 
+  // Logic to scroll to parent and make it glow
+  const handleJumpToParent = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!comment.parentCommentId) return
+
+    const parentElement = document.getElementById(`comment-${comment.parentCommentId}`)
+    
+    if (parentElement) {
+      // 1. Scroll into view
+      parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      
+      // 2. Add highlight classes via direct DOM manipulation for the effect
+      // We look for the inner styled div, which is the first child
+      const card = parentElement.querySelector('.comment-card') as HTMLElement
+      
+      if (card) {
+        // Add highlight styles
+        card.classList.remove('border-gray-200') // remove standard border
+        card.classList.add('ring-2', 'ring-blue-400', 'bg-blue-50', 'border-blue-400')
+        
+        // Remove after 2 seconds
+        setTimeout(() => {
+            card.classList.remove('ring-2', 'ring-blue-400', 'bg-blue-50', 'border-blue-400')
+            card.classList.add('border-gray-200') // restore standard border
+        }, 2000)
+      }
+    }
+  }
+
   return (
-    <div className={`${isReply ? 'ml-8 mt-3' : ''}`}>
-      <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+    // Added ID for scrolling target
+    <div 
+      id={`comment-${comment.id}`}
+      className={`${isFirstLevelReply ? 'ml-8 border-l-2 border-blue-100 pl-4' : ''} transition-colors duration-500`}
+    >
+      {/* Added class 'comment-card' for selecting the specific card div for the glow effect */}
+      <div className="comment-card bg-gray-50 rounded-xl p-3 border border-gray-200 transition-all duration-300">
         <div className="flex items-start gap-2 mb-2">
           {/* Avatar */}
           {comment.authorAvatar ? (
@@ -130,17 +176,23 @@ export function CommentItem({
               </button>
             </div>
             
-            {/* Reply Thread Indicator */}
+            {/* Enhanced Reply Thread Indicator */}
             {comment.replyingToName && (
-              <div className="flex items-center gap-1 text-xs text-gray-500 mb-2 bg-blue-50 px-2 py-1 rounded-md inline-flex">
-                <CornerDownRight className="h-3 w-3" />
-                <span>Replying to <span className="font-bold text-blue-700">{comment.replyingToName}</span></span>
-              </div>
+              <button 
+                onClick={handleJumpToParent}
+                className="group flex items-center gap-1.5 text-xs mb-2 bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 px-2 py-1 rounded-md transition-all shadow-sm w-fit"
+                title="Scroll to parent comment"
+              >
+                <CornerUpLeft className="h-3 w-3 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                <span className="text-gray-500 group-hover:text-blue-600 transition-colors">
+                  Replying to <span className="font-bold text-gray-700 group-hover:text-blue-700">{comment.replyingToName}</span>
+                </span>
+              </button>
             )}
             
             <p className="text-gray-800 text-sm leading-relaxed mb-2">{comment.content}</p>
             
-            {/* Image - Smaller size */}
+            {/* Image */}
             {comment.imageUrl && (
               <img 
                 src={comment.imageUrl} 
@@ -194,7 +246,7 @@ export function CommentItem({
 
       {/* Inline Reply Box */}
       {showReplyBox && (
-        <div className="mt-3 ml-8">
+        <div className={`mt-3 ${depth === 0 ? 'ml-8' : ''}`}>
           <InlineCommentBox
             postId={postId}
             eventId={eventId}
@@ -206,7 +258,7 @@ export function CommentItem({
         </div>
       )}
       
-      {/* Nested Replies - Collapsible */}
+      {/* Nested Replies */}
       {hasReplies && !isCollapsed && (
         <div className="space-y-3 mt-3">
           {comment.replies.map(reply => (
@@ -216,8 +268,7 @@ export function CommentItem({
               postId={postId}
               eventId={eventId}
               onCommentCreated={onCommentCreated}
-              isReply={true} 
-              isInModal={isInModal}
+              depth={depth + 1}
             />
           ))}
         </div>

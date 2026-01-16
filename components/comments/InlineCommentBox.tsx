@@ -265,7 +265,8 @@ export function InlineCommentBox({
           </p>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-blue-200 rounded transition-colors"
+            disabled={isSubmitting}
+            className="p-1 hover:bg-blue-200 rounded transition-colors disabled:opacity-50"
           >
             <X className="h-4 w-4 text-blue-600" />
           </button>
@@ -277,7 +278,8 @@ export function InlineCommentBox({
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowIdentityDropdown(!showIdentityDropdown)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-blue-200 rounded-lg hover:border-blue-300 transition-all text-sm"
+            disabled={isSubmitting}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-blue-200 rounded-lg hover:border-blue-300 transition-all text-sm disabled:opacity-50"
           >
             <div className="flex items-center gap-2">
               <div className={`p-1.5 ${getIdentityBgColor(selectedIdentity?.icon || 'user')} rounded`}>
@@ -319,7 +321,8 @@ export function InlineCommentBox({
         value={content}
         onChange={(e) => setContent(e.target.value)}
         placeholder="Write your comment..."
-        className="w-full px-3 py-2 border border-blue-200 rounded-lg resize-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none text-gray-900 text-sm"
+        disabled={isSubmitting}
+        className="w-full px-3 py-2 border border-blue-200 rounded-lg resize-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none text-gray-900 text-sm disabled:opacity-50 disabled:bg-gray-50"
         rows={3}
         maxLength={2000}
       />
@@ -327,6 +330,12 @@ export function InlineCommentBox({
       {/* Character count */}
       <div className="flex justify-between items-center text-xs text-gray-500">
         <span>{content.length} / 2000</span>
+        {isSubmitting && (
+          <span className="flex items-center gap-1 text-blue-600">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Posting...
+          </span>
+        )}
       </div>
 
       {/* Image preview */}

@@ -54,6 +54,7 @@ export function PostCard({ post, eventId }: PostCardProps) {
           setPostEventId(postData.event_id)
         }
 
+        // Update comment count without closing comments section
         setCommentCount(postData.comments || 0)
 
         if (postData.posted_as_type === 'user') {

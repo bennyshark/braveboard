@@ -32,6 +32,7 @@ type Comment = {
 export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [showCommentBox, setShowCommentBox] = useState(false)
   const [showAllModal, setShowAllModal] = useState(false)
   
@@ -40,9 +41,14 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  const loadComments = async () => {
+  const loadComments = async (isRefresh = false) => {
     try {
-      setLoading(true)
+      if (!isRefresh) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
+      
       const { data: commentsData, error } = await supabase
         .from('comments')
         .select('*')
@@ -153,6 +159,7 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
       console.error('Error loading comments:', error)
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -162,7 +169,8 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
 
   const handleCommentCreated = () => {
     setShowCommentBox(false)
-    loadComments()
+    // Use refresh mode to keep UI stable
+    loadComments(true)
   }
 
   const getPreviewComments = () => {
@@ -213,6 +221,9 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
           <h4 className="flex items-center gap-2 text-sm font-bold text-gray-700">
             <MessageCircle className="h-4 w-4" />
             Comments ({totalCount})
+            {refreshing && (
+              <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+            )}
           </h4>
           <button
             onClick={() => setShowCommentBox(!showCommentBox)}
@@ -228,12 +239,14 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
 
         {/* Top-level comment box */}
         {showCommentBox && (
-          <InlineCommentBox
-            postId={postId}
-            eventId={eventId}
-            onCancel={() => setShowCommentBox(false)}
-            onCommentCreated={handleCommentCreated}
-          />
+          <div className="animate-in slide-in-from-top-2 duration-200">
+            <InlineCommentBox
+              postId={postId}
+              eventId={eventId}
+              onCancel={() => setShowCommentBox(false)}
+              onCommentCreated={handleCommentCreated}
+            />
+          </div>
         )}
 
         {loading ? (
@@ -243,13 +256,14 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         ) : totalCount > 0 ? (
           <div className="space-y-4">
             {previewComments.map(comment => (
-              <CommentItem 
-                key={comment.id} 
-                comment={comment}
-                postId={postId}
-                eventId={eventId}
-                onCommentCreated={loadComments}
-              />
+              <div key={comment.id} className="animate-in fade-in duration-300">
+                <CommentItem 
+                  comment={comment}
+                  postId={postId}
+                  eventId={eventId}
+                  onCommentCreated={() => loadComments(true)}
+                />
+              </div>
             ))}
             
             {hasMore && (
@@ -278,7 +292,7 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         totalCount={totalCount}
         postId={postId}
         eventId={eventId}
-        onCommentCreated={loadComments}
+        onCommentCreated={() => loadComments(true)}
       />
     </>
   )

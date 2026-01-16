@@ -68,14 +68,15 @@ export function AllCommentsModal({
           {comments.length > 0 ? (
             <div className="space-y-4">
               {comments.map(comment => (
-                <CommentItem 
-                  key={comment.id} 
-                  comment={comment}
-                  postId={postId}
-                  eventId={eventId}
-                  onCommentCreated={onCommentCreated}
-                  isInModal={true}
-                />
+                <div key={comment.id} className="animate-in fade-in duration-300">
+                  <CommentItem 
+                    comment={comment}
+                    postId={postId}
+                    eventId={eventId}
+                    onCommentCreated={onCommentCreated}
+                    depth={0}
+                  />
+                </div>
               ))}
             </div>
           ) : (
