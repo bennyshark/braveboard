@@ -262,7 +262,7 @@ function EditAnnouncementForm() {
       if (error) throw error
 
       alert('Announcement updated successfully!')
-      router.push('/home')
+      router.replace('/home?tab=announcements')
 
     } catch (error: any) {
       console.error('Error updating announcement:', error)

@@ -12,6 +12,7 @@ interface PostOptionsMenuProps {
   currentPinOrder: number | null
   content: string
   onUpdate: () => void
+  onDelete?: () => void
 }
 
 export function PostOptionsMenu({ 
@@ -20,7 +21,8 @@ export function PostOptionsMenu({
   authorId, 
   currentPinOrder,
   content,
-  onUpdate 
+  onUpdate,
+  onDelete
 }: PostOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -28,6 +30,7 @@ export function PostOptionsMenu({
   const [canDelete, setCanDelete] = useState(false)
   const [canPin, setCanPin] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const supabase = createBrowserClient(
@@ -41,18 +44,14 @@ export function PostOptionsMenu({
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // Check if can manage post
         const { data: canManage } = await supabase.rpc('can_user_manage_post', {
           p_post_id: postId,
           p_user_id: user.id
         })
 
-        // Can edit if it's your own post
         setCanEdit(user.id === authorId)
-        // Can delete if you can manage the post
         setCanDelete(canManage || false)
 
-        // Check if can pin
         const { data: canPinPost } = await supabase.rpc('can_user_pin_post', {
           p_event_id: eventId,
           p_user_id: user.id
@@ -81,15 +80,19 @@ export function PostOptionsMenu({
   const handleDelete = async () => {
     if (!confirm('Delete this post? This will also delete all comments.')) return
 
+    setDeleting(true)
     try {
       const { error } = await supabase.from('posts').delete().eq('id', postId)
       if (error) throw error
       
-      onUpdate()
       setShowMenu(false)
+      if (onDelete) onDelete()
+      else onUpdate()
     } catch (error: any) {
       console.error('Error deleting post:', error)
       alert(`Failed to delete: ${error.message}`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -102,8 +105,8 @@ export function PostOptionsMenu({
 
       if (error) throw error
       
-      onUpdate()
       setShowMenu(false)
+      onUpdate()
     } catch (error: any) {
       console.error('Error pinning post:', error)
       alert(`Failed to pin: ${error.message}`)
@@ -120,6 +123,7 @@ export function PostOptionsMenu({
           setShowMenu(!showMenu)
         }}
         className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+        disabled={deleting}
       >
         <MoreVertical className="h-4 w-4" />
       </button>
@@ -196,10 +200,11 @@ export function PostOptionsMenu({
                 e.stopPropagation()
                 handleDelete()
               }}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-left text-sm font-medium text-red-600 hover:text-red-700 transition-colors border-t border-gray-100"
+              disabled={deleting}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-left text-sm font-medium text-red-600 hover:text-red-700 transition-colors border-t border-gray-100 disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" />
-              Delete Post
+              {deleting ? 'Deleting...' : 'Delete Post'}
             </button>
           )}
         </div>

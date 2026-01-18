@@ -1,4 +1,4 @@
-// app/(site)/home/page.tsx
+// app/(site)/home/page.tsx - KEY CHANGES: Remove window.location.reload()
 "use client"
 import { useState, useEffect } from "react"
 import { Newspaper, Calendar, Megaphone, Loader2, AlertCircle } from "lucide-react"
@@ -9,6 +9,7 @@ import { CreateButton } from "@/components/home/CreateButton"
 import { FeedFilters } from "@/components/home/FeedFilters"
 import { AnnouncementCard } from "@/components/feed/AnnouncementCard"
 import { BulletinCard } from "@/components/feed/BulletinCard"
+import { useSearchParams } from "next/navigation"
 
 type Announcement = {
   id: string
@@ -39,6 +40,7 @@ type Bulletin = {
 }
 
 export default function HomePage() {
+  const searchParams = useSearchParams()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
@@ -62,10 +64,7 @@ export default function HomePage() {
     try {
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
-        .select(`
-          *,
-          creator_org:organizations(name)
-        `)
+        .select(`*, creator_org:organizations(name)`)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -217,10 +216,7 @@ export default function HomePage() {
     try {
       const { data: announcementsData, error } = await supabase
         .from('announcements')
-        .select(`
-          *,
-          creator_org:organizations(name)
-        `)
+        .select(`*, creator_org:organizations(name)`)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -265,10 +261,7 @@ export default function HomePage() {
     try {
       const { data: bulletinsData, error } = await supabase
         .from('bulletins')
-        .select(`
-          *,
-          creator_org:organizations(name)
-        `)
+        .select(`*, creator_org:organizations(name)`)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -326,10 +319,7 @@ export default function HomePage() {
 
           const { data: memberships } = await supabase
             .from('user_organizations')
-            .select(`
-              role,
-              organization:organizations (id, code, name)
-            `)
+            .select(`role, organization:organizations (id, code, name)`)
             .eq('user_id', user.id)
             .in('role', ['officer', 'admin'])
           
@@ -374,6 +364,13 @@ export default function HomePage() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && ['bulletin', 'events', 'announcements'].includes(tab)) {
+      setActiveFeedFilter(tab)
+    }
+  }, [searchParams])
+
   const feedFilters = [
     { id: "bulletin", label: "Bulletin", icon: Newspaper, color: "blue" },
     { id: "events", label: "Events", icon: Calendar, color: "orange" },
@@ -388,6 +385,10 @@ export default function HomePage() {
       else newSet.add(eventId)
       return newSet
     })
+  }
+
+  const handleEventDeleted = (eventId: string) => {
+    setEvents(prev => prev.filter(e => e.id !== eventId))
   }
 
   const filteredEvents = events.filter(event => {
@@ -539,6 +540,7 @@ export default function HomePage() {
                   isPostsHidden={hiddenEvents.has(event.id)}
                   onToggleHide={(e) => toggleHideEvent(event.id, e)}
                   onPostCreated={loadEvents}
+                  onEventDeleted={() => handleEventDeleted(event.id)}
                 />
               ))
             }

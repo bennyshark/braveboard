@@ -10,7 +10,7 @@ import { AllCommentsModal } from "./AllCommentsModal"
 interface CommentSectionProps {
   contentType: 'post' | 'announcement' | 'bulletin'
   contentId: string
-  eventId?: string // Only needed for posts (for posting permissions)
+  eventId?: string
   initialCount?: number
 }
 
@@ -28,6 +28,7 @@ type Comment = {
   parentCommentId: string | null
   replies: Comment[]
   replyingToName?: string | null
+  isDeleted?: boolean
 }
 
 export function CommentSection({ contentType, contentId, eventId, initialCount = 0 }: CommentSectionProps) {
@@ -100,16 +101,20 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         let displayName = 'Unknown User'
         let displayAvatar = null
         
-        if (c.posted_as_type === 'faith_admin') {
-          displayName = 'FAITH Administration'
-        } else if (c.posted_as_type === 'organization' && c.posted_as_org_id) {
-          const orgData = orgMap.get(c.posted_as_org_id)
-          displayName = orgData?.name || 'Organization'
-          displayAvatar = orgData?.avatarUrl || null
-        } else {
-          const authorData = authorMap.get(c.author_id)
-          displayName = authorData?.name || 'Unknown User'
-          displayAvatar = authorData?.avatarUrl || null
+        const isDeleted = c.is_deleted || c.content === '[Comment deleted]'
+        
+        if (!isDeleted) {
+          if (c.posted_as_type === 'faith_admin') {
+            displayName = 'FAITH Administration'
+          } else if (c.posted_as_type === 'organization' && c.posted_as_org_id) {
+            const orgData = orgMap.get(c.posted_as_org_id)
+            displayName = orgData?.name || 'Organization'
+            displayAvatar = orgData?.avatarUrl || null
+          } else {
+            const authorData = authorMap.get(c.author_id)
+            displayName = authorData?.name || 'Unknown User'
+            displayAvatar = authorData?.avatarUrl || null
+          }
         }
 
         commentNameMap.set(c.id, displayName)
@@ -129,7 +134,8 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
           postedAsOrgId: c.posted_as_org_id,
           parentCommentId: c.parent_comment_id,
           replies: [],
-          replyingToName: null
+          replyingToName: null,
+          isDeleted: isDeleted
         }
       })
 
@@ -138,7 +144,8 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
       
       mappedComments.forEach(comment => {
         if (comment.parentCommentId) {
-          comment.replyingToName = commentNameMap.get(comment.parentCommentId) || 'Unknown'
+          const parentName = commentNameMap.get(comment.parentCommentId)
+          comment.replyingToName = parentName || 'Unknown'
           
           if (!repliesMap.has(comment.parentCommentId)) {
             repliesMap.set(comment.parentCommentId, [])
@@ -238,7 +245,6 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
           </button>
         </div>
 
-        {/* Top-level comment box */}
         {showCommentBox && (
           <div className="animate-in slide-in-from-top-2 duration-200">
             <InlineCommentBox
@@ -265,6 +271,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
                   contentId={contentId}
                   eventId={eventId}
                   onCommentCreated={() => loadComments(true)}
+                  isInsideModal={false}
                 />
               </div>
             ))}
@@ -287,7 +294,6 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         )}
       </div>
 
-      {/* All Comments Modal */}
       <AllCommentsModal
         isOpen={showAllModal}
         onClose={() => setShowAllModal(false)}

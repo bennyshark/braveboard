@@ -7,10 +7,16 @@ import { createBrowserClient } from "@supabase/ssr"
 interface CommentOptionsMenuProps {
   commentId: string
   authorId: string
+  hasReplies?: boolean
   onUpdate: () => void
 }
 
-export function CommentOptionsMenu({ commentId, authorId, onUpdate }: CommentOptionsMenuProps) {
+export function CommentOptionsMenu({ 
+  commentId, 
+  authorId, 
+  hasReplies = false,
+  onUpdate 
+}: CommentOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [canDelete, setCanDelete] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -58,14 +64,37 @@ export function CommentOptionsMenu({ commentId, authorId, onUpdate }: CommentOpt
   }, [])
 
   const handleDelete = async () => {
-    if (!confirm('Delete this comment?')) return
+    const confirmMsg = hasReplies 
+      ? 'This comment has replies. It will be marked as deleted but replies will remain visible.'
+      : 'Delete this comment permanently?'
+    
+    if (!confirm(confirmMsg)) return
 
     try {
-      const { error } = await supabase.from('comments').delete().eq('id', commentId)
-      if (error) throw error
+      if (hasReplies) {
+        // Mark as deleted, keep the comment for reply chain
+        const { error } = await supabase
+          .from('comments')
+          .update({ 
+            content: '[Comment deleted]',
+            image_url: null,
+            is_deleted: true
+          })
+          .eq('id', commentId)
+        
+        if (error) throw error
+      } else {
+        // Actually delete if no replies
+        const { error } = await supabase
+          .from('comments')
+          .delete()
+          .eq('id', commentId)
+        
+        if (error) throw error
+      }
       
-      onUpdate()
       setShowMenu(false)
+      onUpdate()
     } catch (error: any) {
       console.error('Error deleting comment:', error)
       alert(`Failed to delete: ${error.message}`)

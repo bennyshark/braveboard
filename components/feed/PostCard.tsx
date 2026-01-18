@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx
+// components/feed/PostCard.tsx - ADD onPostDeleted and onPostUpdated props
 "use client"
 import { useState, useEffect } from "react"
 import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
@@ -11,6 +11,8 @@ import { createBrowserClient } from "@supabase/ssr"
 interface PostCardProps {
   post: Post
   eventId?: string
+  onPostDeleted?: () => void
+  onPostUpdated?: () => void
 }
 
 type PostIdentity = {
@@ -19,7 +21,7 @@ type PostIdentity = {
   avatarUrl: string | null
 }
 
-export function PostCard({ post, eventId }: PostCardProps) {
+export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
@@ -39,66 +41,71 @@ export function PostCard({ post, eventId }: PostCardProps) {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const { data: postData } = await supabase
-          .from('posts')
-          .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order')
-          .eq('id', post.id)
+  const loadPostData = async () => {
+    try {
+      const { data: postData } = await supabase
+        .from('posts')
+        .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order')
+        .eq('id', post.id)
+        .single()
+
+      if (!postData) {
+        setLoading(false)
+        return
+      }
+
+      if (!eventId && postData.event_id) {
+        setPostEventId(postData.event_id)
+      }
+
+      setCommentCount(postData.comments || 0)
+      setEditedAt(postData.edited_at)
+      setPinOrder(postData.pin_order)
+
+      if (postData.posted_as_type === 'user') {
+        setDisplayIdentity({
+          type: 'user',
+          name: post.author,
+          avatarUrl: post.avatarUrl
+        })
+      }
+      else if (postData.posted_as_type === 'faith_admin') {
+        setDisplayIdentity({
+          type: 'faith_admin',
+          name: 'FAITH Administration',
+          avatarUrl: null
+        })
+      }
+      else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('name, avatar_url')
+          .eq('id', postData.posted_as_org_id)
           .single()
 
-        if (!postData) {
-          setLoading(false)
-          return
-        }
-
-        if (!eventId && postData.event_id) {
-          setPostEventId(postData.event_id)
-        }
-
-        setCommentCount(postData.comments || 0)
-        setEditedAt(postData.edited_at)
-        setPinOrder(postData.pin_order)
-
-        if (postData.posted_as_type === 'user') {
+        if (orgData) {
           setDisplayIdentity({
-            type: 'user',
-            name: post.author,
-            avatarUrl: post.avatarUrl
+            type: 'organization',
+            name: orgData.name,
+            avatarUrl: orgData.avatar_url || null
           })
         }
-        else if (postData.posted_as_type === 'faith_admin') {
-          setDisplayIdentity({
-            type: 'faith_admin',
-            name: 'FAITH Administration',
-            avatarUrl: null
-          })
-        }
-        else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
-          const { data: orgData } = await supabase
-            .from('organizations')
-            .select('name, avatar_url')
-            .eq('id', postData.posted_as_org_id)
-            .single()
-
-          if (orgData) {
-            setDisplayIdentity({
-              type: 'organization',
-              name: orgData.name,
-              avatarUrl: orgData.avatar_url || null
-            })
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching post data:', error)
-      } finally {
-        setLoading(false)
       }
+    } catch (error) {
+      console.error('Error fetching post data:', error)
+    } finally {
+      setLoading(false)
     }
+  }
 
-    fetchData()
+  useEffect(() => {
+    loadPostData()
   }, [post.id, supabase])
+
+  const handlePostUpdate = () => {
+    loadPostData()
+    if (onPostUpdated) onPostUpdated()
+  }
 
   const getAuthorColor = (type: string) => {
     switch(type) {
@@ -146,7 +153,7 @@ export function PostCard({ post, eventId }: PostCardProps) {
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-300 overflow-hidden hover:border-gray-400 transition-all">
+      <div className="bg-white rounded-xl border border-gray-300 overflow-hidden hover:border-gray-400 transition-all duration-200">
         <div className="p-4">
           {/* Header */}
           <div className="flex items-start gap-3 mb-3">
@@ -220,7 +227,8 @@ export function PostCard({ post, eventId }: PostCardProps) {
                     authorId={post.authorId}
                     currentPinOrder={pinOrder}
                     content={post.content}
-                    onUpdate={() => window.location.reload()}
+                    onUpdate={handlePostUpdate}
+                    onDelete={onPostDeleted}
                   />
                 )}
               </div>
@@ -291,7 +299,7 @@ export function PostCard({ post, eventId }: PostCardProps) {
 
         {/* Comment Section - Collapsible */}
         {showComments && postEventId && (
-          <div className="border-t border-gray-200 p-4 bg-gray-50">
+          <div className="border-t border-gray-200 p-4 bg-gray-50 animate-in slide-in-from-top-2 duration-200">
             <CommentSection 
               contentType="post"
               contentId={post.id} 

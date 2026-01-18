@@ -1,4 +1,4 @@
-// components/feed/EventCard.tsx - REPLACE ENTIRE FILE
+// components/feed/EventCard.tsx
 "use client"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -14,9 +14,16 @@ interface EventCardProps {
   isPostsHidden: boolean
   onToggleHide: (e: React.MouseEvent) => void
   onPostCreated?: () => void
+  onEventDeleted?: () => void
 }
 
-export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }: EventCardProps) {
+export function EventCard({ 
+  event, 
+  isPostsHidden, 
+  onToggleHide, 
+  onPostCreated,
+  onEventDeleted
+}: EventCardProps) {
   const router = useRouter()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
   const [eventOfText, setEventOfText] = useState("Loading...")
@@ -99,9 +106,17 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
     setIsCreatePostOpen(true)
   }
 
+  const handleEventUpdate = () => {
+    if (onPostCreated) onPostCreated()
+  }
+
+  const handleEventDelete = () => {
+    if (onEventDeleted) onEventDeleted()
+  }
+
   return (
     <>
-      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
+      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200">
         <div 
           className="relative bg-gradient-to-br from-gray-50 to-white cursor-pointer group"
           onClick={handleCardClick}
@@ -148,7 +163,8 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
 
               <EventOptionsMenu 
                 eventId={event.id} 
-                onUpdate={() => window.location.reload()}
+                onUpdate={handleEventUpdate}
+                onDelete={handleEventDelete}
               />
             </div>
 
@@ -190,7 +206,13 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
               {visiblePosts.length > 0 ? (
                 <div className="space-y-3">
                   {visiblePosts.map((post) => (
-                    <PostCard key={post.id} post={post} eventId={event.id} />
+                    <PostCard 
+                      key={post.id} 
+                      post={post} 
+                      eventId={event.id}
+                      onPostDeleted={onPostCreated}
+                      onPostUpdated={onPostCreated}
+                    />
                   ))}
                 </div>
               ) : (

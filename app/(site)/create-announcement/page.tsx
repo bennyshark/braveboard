@@ -292,7 +292,7 @@ function CreateAnnouncementForm() {
       if (error) throw error
 
       alert('Announcement posted successfully!')
-      router.push('/home')
+      router.replace('/home?tab=announcements')   
 
     } catch (error: any) {
       console.error('Error creating announcement:', error)

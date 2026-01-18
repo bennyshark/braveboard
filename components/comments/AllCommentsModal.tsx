@@ -17,6 +17,7 @@ type Comment = {
   parentCommentId: string | null
   replies: Comment[]
   replyingToName?: string | null
+  isDeleted?: boolean
 }
 
 interface AllCommentsModalProps {
@@ -43,7 +44,7 @@ export function AllCommentsModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 all-comments-modal">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl">
         
         <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
@@ -76,6 +77,7 @@ export function AllCommentsModal({
                     eventId={eventId}
                     onCommentCreated={onCommentCreated}
                     depth={0}
+                    isInsideModal={true}
                   />
                 </div>
               ))}

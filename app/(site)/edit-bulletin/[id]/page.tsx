@@ -269,7 +269,7 @@ function EditBulletinForm() {
       if (error) throw error
 
       alert('Bulletin updated successfully!')
-      router.push('/home')
+      router.replace('/home')
 
     } catch (error: any) {
       console.error('Error updating bulletin:', error)

@@ -245,7 +245,9 @@ function EditEventForm() {
     }
   }
 
-  const handleSubmit = async () => {
+// In edit-event/[id]/page.tsx - UPDATE the handleSubmit function
+
+const handleSubmit = async () => {
     if (!userId) return
 
     if (!title.trim()) { alert('Please enter an event title'); return }
@@ -256,6 +258,19 @@ function EditEventForm() {
     const end = new Date(endDate)
 
     if (start >= end) { alert('Start date must be earlier than the end date'); return }
+    
+    // NEW: Check for duplicate event title (excluding current event)
+    const { data: existingEvent } = await supabase
+      .from('events')
+      .select('id')
+      .eq('title', title.trim())
+      .neq('id', eventId)
+      .single()
+
+    if (existingEvent) {
+      alert('An event with this title already exists. Please choose a different title.')
+      return
+    }
     
     if (participantType !== 'public') {
       const hasPartSelection = partOrgs.length > 0 || partDepts.length > 0 || partCourses.length > 0
@@ -310,7 +325,8 @@ function EditEventForm() {
       if (error) throw error
 
       alert('Event updated successfully!')
-      router.push(`/event/${eventId}`)
+      // FIX: Use router.replace to avoid back button issue
+      router.replace(`/event/${eventId}`)
 
     } catch (error: any) {
       console.error('Error updating event:', error)

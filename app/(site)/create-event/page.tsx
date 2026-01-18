@@ -193,8 +193,6 @@ function CreateEventForm() {
 
   }, [dataLoaded, searchParams, userOrgs, isFaithAdmin])
 
-
-  // --- HANDLERS ---
 // --- HANDLERS ---
 useEffect(() => {
   if (!dataLoaded) return
@@ -265,84 +263,99 @@ useEffect(() => {
     }
   }
 
-  const handleSubmit = async () => {
-    if (!userId) return
+// In create-event/page.tsx - UPDATE the handleSubmit function with title validation
 
-    // --- Validation ---
-    if (!title.trim()) { alert('Please enter an event title'); return }
-    if (creatorType === 'organization' && !selectedCreatorOrg) { alert('Please select an organization'); return }
-    if (!startDate || !endDate) { alert('Please select both start and end dates'); return }
-    
-    const start = new Date(startDate)
-    const end = new Date(endDate)
+const handleSubmit = async () => {
+  if (!userId) return
 
-    // Rule 1: Start < End
-    if (start >= end) { alert('Start date must be earlier than the end date'); return }
-    
-    // Check Participants
-    if (participantType !== 'public') {
-      const hasPartSelection = partOrgs.length > 0 || partDepts.length > 0 || partCourses.length > 0
-      if (!hasPartSelection) { alert('Please select at least one participant group (Org, Dept, or Course)'); return }
-    }
+  // Validation
+  if (!title.trim()) { alert('Please enter an event title'); return }
+  if (creatorType === 'organization' && !selectedCreatorOrg) { alert('Please select an organization'); return }
+  if (!startDate || !endDate) { alert('Please select both start and end dates'); return }
+  
+  const start = new Date(startDate)
+  const end = new Date(endDate)
 
-    // Check Visibility
-    if (visibilityType !== 'public') {
-      const hasVisSelection = visOrgs.length > 0 || visDepts.length > 0 || visCourses.length > 0
-      if (!hasVisSelection) { alert('Please select at least one visibility group'); return }
-    }
-    
-    let finalPostingDate = null
-    if (enableExtendedPosting && postingOpenUntil) {
-      const postingEnd = new Date(postingOpenUntil)
-      // Rule 2: Extended Posting > End Date
-      if (postingEnd <= end) { 
-        alert('Extended posting period must be AFTER the event end date.'); 
-        return 
-      }
-      finalPostingDate = postingOpenUntil
-    }
+  // Rule 1: Start < End
+  if (start >= end) { alert('Start date must be earlier than the end date'); return }
+  
+  // NEW: Check for duplicate event title
+  const { data: existingEvent } = await supabase
+    .from('events')
+    .select('id')
+    .eq('title', title.trim())
+    .single()
 
-    // --- Submission ---
-    setIsSubmitting(true)
-    try {
-      const eventData = {
-        title: title.trim(),
-        description: description.trim(),
-        created_by: userId,
-        creator_type: creatorType,
-        creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
-        start_date: startDate,
-        end_date: endDate,
-        location: location.trim() || null,
-        tags: tags,
-        visibility_type: visibilityType,
-        visibility_orgs: visOrgs,
-        visibility_depts: visDepts,
-        visibility_courses: visCourses,
-        participant_type: participantType,
-        participant_orgs: partOrgs,
-        participant_depts: partDepts,
-        participant_courses: partCourses,
-        who_can_post: whoCanPost,
-        posting_open_until: finalPostingDate,
-        is_pinned: isPinned && isFaithAdmin, 
-      }
-
-      console.log('Submitting:', eventData)
-
-      const { error } = await supabase.from('events').insert(eventData)
-      if (error) throw error
-
-      alert('Event created successfully!')
-      router.push('/home')
-
-    } catch (error: any) {
-      console.error('Error creating event:', error)
-      alert(`Failed: ${error.message}`)
-    } finally {
-      setIsSubmitting(false)
-    }
+  if (existingEvent) {
+    alert('An event with this title already exists. Please choose a different title.')
+    return
   }
+  
+  // Check Participants
+  if (participantType !== 'public') {
+    const hasPartSelection = partOrgs.length > 0 || partDepts.length > 0 || partCourses.length > 0
+    if (!hasPartSelection) { alert('Please select at least one participant group (Org, Dept, or Course)'); return }
+  }
+
+  // Check Visibility
+  if (visibilityType !== 'public') {
+    const hasVisSelection = visOrgs.length > 0 || visDepts.length > 0 || visCourses.length > 0
+    if (!hasVisSelection) { alert('Please select at least one visibility group'); return }
+  }
+  
+  let finalPostingDate = null
+  if (enableExtendedPosting && postingOpenUntil) {
+    const postingEnd = new Date(postingOpenUntil)
+    // Rule 2: Extended Posting > End Date
+    if (postingEnd <= end) { 
+      alert('Extended posting period must be AFTER the event end date.'); 
+      return 
+    }
+    finalPostingDate = postingOpenUntil
+  }
+
+  // --- Submission ---
+  setIsSubmitting(true)
+  try {
+    const eventData = {
+      title: title.trim(),
+      description: description.trim(),
+      created_by: userId,
+      creator_type: creatorType,
+      creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
+      start_date: startDate,
+      end_date: endDate,
+      location: location.trim() || null,
+      tags: tags,
+      visibility_type: visibilityType,
+      visibility_orgs: visOrgs,
+      visibility_depts: visDepts,
+      visibility_courses: visCourses,
+      participant_type: participantType,
+      participant_orgs: partOrgs,
+      participant_depts: partDepts,
+      participant_courses: partCourses,
+      who_can_post: whoCanPost,
+      posting_open_until: finalPostingDate,
+      is_pinned: isPinned && isFaithAdmin, 
+    }
+
+    console.log('Submitting:', eventData)
+
+    const { error } = await supabase.from('events').insert(eventData)
+    if (error) throw error
+
+    alert('Event created successfully!')
+    // FIX: Use router.replace to avoid back button going to create page
+    router.replace('/home?tab=events')
+
+  } catch (error: any) {
+    console.error('Error creating event:', error)
+    alert(`Failed: ${error.message}`)
+  } finally {
+    setIsSubmitting(false)
+  }
+}
 
   const renderSelectionList = (
     items: { id?: string, code?: string, name: string }[], 

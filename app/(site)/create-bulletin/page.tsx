@@ -282,7 +282,7 @@ function CreateBulletinForm() {
       if (error) throw error
 
       alert('Bulletin posted successfully!')
-      router.push('/home')
+      router.replace('/home')
 
     } catch (error: any) {
       console.error('Error creating bulletin:', error)
