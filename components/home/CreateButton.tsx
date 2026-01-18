@@ -16,10 +16,10 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Organizations allowed to create announcements
+  // Organizations allowed to create announcements (restricted list)
   const announcementAllowedOrgs = ["Student Council", "Lighthouse"]
   
-  // Filter orgs based on content type
+  // For bulletins and events, all officer/admin orgs can create
   const allowedOrgs = activeFeedFilter === 'announcements' 
     ? userCreateOrgs.filter(org => announcementAllowedOrgs.includes(org.name))
     : userCreateOrgs
@@ -47,8 +47,11 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
     }
     
     // Determine target page based on active filter
-    const isAnnouncement = activeFeedFilter === 'announcements'
-    const basePath = isAnnouncement ? '/create-announcement' : '/create-event'
+    const basePath = activeFeedFilter === 'announcements' 
+      ? '/create-announcement' 
+      : activeFeedFilter === 'bulletin'
+      ? '/create-bulletin'
+      : '/create-event'
     
     // If only one option exists, go directly there with the correct params
     if (!hasMultipleOptions) {
@@ -64,8 +67,11 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
   }
 
   const handleOptionClick = (type: 'faith_admin' | 'organization', orgId?: string) => {
-    const isAnnouncement = activeFeedFilter === 'announcements'
-    const basePath = isAnnouncement ? '/create-announcement' : '/create-event'
+    const basePath = activeFeedFilter === 'announcements' 
+      ? '/create-announcement' 
+      : activeFeedFilter === 'bulletin'
+      ? '/create-bulletin'
+      : '/create-event'
     
     if (type === 'faith_admin') {
       router.push(`${basePath}?type=faith_admin`)
@@ -74,7 +80,11 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
     }
   }
 
-  const buttonLabel = activeFeedFilter === 'announcements' ? 'Create Post' : 'Create Event'
+  const buttonLabel = activeFeedFilter === 'announcements' 
+    ? 'Create Post' 
+    : activeFeedFilter === 'bulletin'
+    ? 'Create Post'
+    : 'Create Event'
 
   return (
     <div className="relative" ref={dropdownRef}>

@@ -5,8 +5,9 @@ import { X, Image as ImageIcon, Loader2, Send, User, Shield, Users, ChevronDown 
 import { createBrowserClient } from "@supabase/ssr"
 
 interface InlineCommentBoxProps {
-  postId: string
-  eventId: string
+  contentType: 'post' | 'announcement' | 'bulletin'
+  contentId: string
+  eventId?: string // Only needed for posts (for permissions check)
   parentCommentId?: string | null
   replyingTo?: string | null
   onCancel: () => void
@@ -21,7 +22,8 @@ type CommentingIdentity = {
 }
 
 export function InlineCommentBox({ 
-  postId, 
+  contentType,
+  contentId,
   eventId,
   parentCommentId = null,
   replyingTo = null,
@@ -46,7 +48,6 @@ export function InlineCommentBox({
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // Auto-focus textarea on mount
   useEffect(() => {
     textareaRef.current?.focus()
   }, [])
@@ -85,46 +86,94 @@ export function InlineCommentBox({
           })
         }
 
-        const { data: eventData } = await supabase
-          .from('events')
-          .select('participant_type, participant_orgs')
-          .eq('id', eventId)
-          .single()
+        // For posts, check event participant orgs
+        // For announcements/bulletins, check audience orgs
+        if (contentType === 'post' && eventId) {
+          const { data: eventData } = await supabase
+            .from('events')
+            .select('participant_type, participant_orgs')
+            .eq('id', eventId)
+            .single()
 
-        const participantType = eventData?.participant_type
-        const participantOrgIds = eventData?.participant_orgs || []
+          const participantType = eventData?.participant_type
+          const participantOrgIds = eventData?.participant_orgs || []
 
-        const { data: userOrgs } = await supabase
-          .from('user_organizations')
-          .select(`
-            organization_id,
-            role,
-            organization:organizations!inner(id, name)
-          `)
-          .eq('user_id', user.id)
-          .in('role', ['officer', 'admin'])
+          const { data: userOrgs } = await supabase
+            .from('user_organizations')
+            .select(`
+              organization_id,
+              role,
+              organization:organizations!inner(id, name)
+            `)
+            .eq('user_id', user.id)
+            .in('role', ['officer', 'admin'])
 
-        if (userOrgs) {
-          let eligibleOrgs: any[]
+          if (userOrgs) {
+            let eligibleOrgs: any[]
 
-          if (participantType === 'public') {
-            eligibleOrgs = userOrgs
-          } else if (participantOrgIds.length > 0) {
-            eligibleOrgs = userOrgs.filter((uo: any) => 
-              participantOrgIds.includes(uo.organization_id)
-            )
-          } else {
-            eligibleOrgs = []
-          }
+            if (participantType === 'public') {
+              eligibleOrgs = userOrgs
+            } else if (participantOrgIds.length > 0) {
+              eligibleOrgs = userOrgs.filter((uo: any) => 
+                participantOrgIds.includes(uo.organization_id)
+              )
+            } else {
+              eligibleOrgs = []
+            }
 
-          eligibleOrgs.forEach((uo: any) => {
-            identities.push({
-              type: 'organization',
-              id: uo.organization.id,
-              name: uo.organization.name,
-              icon: 'org'
+            eligibleOrgs.forEach((uo: any) => {
+              identities.push({
+                type: 'organization',
+                id: uo.organization.id,
+                name: uo.organization.name,
+                icon: 'org'
+              })
             })
-          })
+          }
+        } else if (contentType === 'announcement' || contentType === 'bulletin') {
+          // For announcements/bulletins, users who can see it can comment as their orgs
+          const table = contentType === 'announcement' ? 'announcements' : 'bulletins'
+          const { data: contentData } = await supabase
+            .from(table)
+            .select('audience_type, audience_orgs')
+            .eq('id', contentId)
+            .single()
+
+          const audienceType = contentData?.audience_type
+          const audienceOrgIds = contentData?.audience_orgs || []
+
+          const { data: userOrgs } = await supabase
+            .from('user_organizations')
+            .select(`
+              organization_id,
+              role,
+              organization:organizations!inner(id, name)
+            `)
+            .eq('user_id', user.id)
+            .in('role', ['officer', 'admin'])
+
+          if (userOrgs) {
+            let eligibleOrgs: any[]
+
+            if (audienceType === 'public') {
+              eligibleOrgs = userOrgs
+            } else if (audienceOrgIds.length > 0) {
+              eligibleOrgs = userOrgs.filter((uo: any) => 
+                audienceOrgIds.includes(uo.organization_id)
+              )
+            } else {
+              eligibleOrgs = []
+            }
+
+            eligibleOrgs.forEach((uo: any) => {
+              identities.push({
+                type: 'organization',
+                id: uo.organization.id,
+                name: uo.organization.name,
+                icon: 'org'
+              })
+            })
+          }
         }
 
         setAvailableIdentities(identities)
@@ -138,7 +187,7 @@ export function InlineCommentBox({
     }
 
     fetchIdentities()
-  }, [eventId, supabase])
+  }, [contentType, contentId, eventId, supabase])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -203,7 +252,8 @@ export function InlineCommentBox({
       }
 
       const { error } = await supabase.from('comments').insert({
-        post_id: postId,
+        content_type: contentType,
+        content_id: contentId,
         parent_comment_id: parentCommentId,
         author_id: user.id,
         content: content.trim(),
@@ -257,7 +307,6 @@ export function InlineCommentBox({
 
   return (
     <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 space-y-3 animate-in slide-in-from-top-2 duration-200">
-      {/* Reply indicator */}
       {replyingTo && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-blue-700 font-medium">
@@ -273,7 +322,6 @@ export function InlineCommentBox({
         </div>
       )}
 
-      {/* Identity selector */}
       {availableIdentities.length > 1 && (
         <div className="relative" ref={dropdownRef}>
           <button
@@ -315,7 +363,6 @@ export function InlineCommentBox({
         </div>
       )}
 
-      {/* Text area */}
       <textarea
         ref={textareaRef}
         value={content}
@@ -327,7 +374,6 @@ export function InlineCommentBox({
         maxLength={2000}
       />
 
-      {/* Character count */}
       <div className="flex justify-between items-center text-xs text-gray-500">
         <span>{content.length} / 2000</span>
         {isSubmitting && (
@@ -338,7 +384,6 @@ export function InlineCommentBox({
         )}
       </div>
 
-      {/* Image preview */}
       {imagePreview && (
         <div className="relative inline-block">
           <img 
@@ -355,7 +400,6 @@ export function InlineCommentBox({
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex gap-2">
           <input

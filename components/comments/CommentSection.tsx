@@ -8,8 +8,9 @@ import { InlineCommentBox } from "./InlineCommentBox"
 import { AllCommentsModal } from "./AllCommentsModal"
 
 interface CommentSectionProps {
-  postId: string
-  eventId: string
+  contentType: 'post' | 'announcement' | 'bulletin'
+  contentId: string
+  eventId?: string // Only needed for posts (for posting permissions)
   initialCount?: number
 }
 
@@ -29,7 +30,7 @@ type Comment = {
   replyingToName?: string | null
 }
 
-export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSectionProps) {
+export function CommentSection({ contentType, contentId, eventId, initialCount = 0 }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -52,7 +53,8 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
       const { data: commentsData, error } = await supabase
         .from('comments')
         .select('*')
-        .eq('post_id', postId)
+        .eq('content_type', contentType)
+        .eq('content_id', contentId)
         .order('created_at', { ascending: true })
 
       if (error) throw error
@@ -165,11 +167,10 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
 
   useEffect(() => {
     loadComments()
-  }, [postId])
+  }, [contentType, contentId])
 
   const handleCommentCreated = () => {
     setShowCommentBox(false)
-    // Use refresh mode to keep UI stable
     loadComments(true)
   }
 
@@ -241,7 +242,8 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         {showCommentBox && (
           <div className="animate-in slide-in-from-top-2 duration-200">
             <InlineCommentBox
-              postId={postId}
+              contentType={contentType}
+              contentId={contentId}
               eventId={eventId}
               onCancel={() => setShowCommentBox(false)}
               onCommentCreated={handleCommentCreated}
@@ -259,7 +261,8 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
               <div key={comment.id} className="animate-in fade-in duration-300">
                 <CommentItem 
                   comment={comment}
-                  postId={postId}
+                  contentType={contentType}
+                  contentId={contentId}
                   eventId={eventId}
                   onCommentCreated={() => loadComments(true)}
                 />
@@ -290,7 +293,8 @@ export function CommentSection({ postId, eventId, initialCount = 0 }: CommentSec
         onClose={() => setShowAllModal(false)}
         comments={comments}
         totalCount={totalCount}
-        postId={postId}
+        contentType={contentType}
+        contentId={contentId}
         eventId={eventId}
         onCommentCreated={() => loadComments(true)}
       />

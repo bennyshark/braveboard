@@ -24,8 +24,9 @@ interface AllCommentsModalProps {
   onClose: () => void
   comments: Comment[]
   totalCount: number
-  postId: string
-  eventId: string
+  contentType: 'post' | 'announcement' | 'bulletin'
+  contentId: string
+  eventId?: string
   onCommentCreated: () => void
 }
 
@@ -34,7 +35,8 @@ export function AllCommentsModal({
   onClose, 
   comments, 
   totalCount,
-  postId,
+  contentType,
+  contentId,
   eventId,
   onCommentCreated
 }: AllCommentsModalProps) {
@@ -44,7 +46,6 @@ export function AllCommentsModal({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl">
         
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -63,7 +64,6 @@ export function AllCommentsModal({
           </button>
         </div>
 
-        {/* Content - Scrollable */}
         <div className="flex-1 overflow-y-auto p-6">
           {comments.length > 0 ? (
             <div className="space-y-4">
@@ -71,7 +71,8 @@ export function AllCommentsModal({
                 <div key={comment.id} className="animate-in fade-in duration-300">
                   <CommentItem 
                     comment={comment}
-                    postId={postId}
+                    contentType={contentType}
+                    contentId={contentId}
                     eventId={eventId}
                     onCommentCreated={onCommentCreated}
                     depth={0}
@@ -87,7 +88,6 @@ export function AllCommentsModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end p-4 border-t border-gray-200 flex-shrink-0">
           <button
             onClick={onClose}

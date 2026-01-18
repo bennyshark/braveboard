@@ -32,15 +32,17 @@ type Comment = {
 
 interface CommentItemProps {
   comment: Comment
-  postId: string
-  eventId: string
+  contentType: 'post' | 'announcement' | 'bulletin'
+  contentId: string
+  eventId?: string
   onCommentCreated: () => void
   depth?: number
 }
 
 export function CommentItem({ 
   comment, 
-  postId,
+  contentType,
+  contentId,
   eventId,
   onCommentCreated,
   depth = 0
@@ -49,8 +51,6 @@ export function CommentItem({
   const [showReplyBox, setShowReplyBox] = useState(false)
   const hasReplies = comment.replies.length > 0
   
-  // Only apply indentation styling if this is the FIRST level of reply (depth 1).
-  // Nested replies will sit inside this container naturally.
   const isFirstLevelReply = depth === 1
 
   const getIdentityIcon = (type: string) => {
@@ -106,7 +106,6 @@ export function CommentItem({
     onCommentCreated()
   }
 
-  // Logic to scroll to parent and make it glow
   const handleJumpToParent = (e: React.MouseEvent) => {
     e.preventDefault()
     if (!comment.parentCommentId) return
@@ -114,37 +113,29 @@ export function CommentItem({
     const parentElement = document.getElementById(`comment-${comment.parentCommentId}`)
     
     if (parentElement) {
-      // 1. Scroll into view
       parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       
-      // 2. Add highlight classes via direct DOM manipulation for the effect
-      // We look for the inner styled div, which is the first child
       const card = parentElement.querySelector('.comment-card') as HTMLElement
       
       if (card) {
-        // Add highlight styles
-        card.classList.remove('border-gray-200') // remove standard border
+        card.classList.remove('border-gray-200')
         card.classList.add('ring-2', 'ring-blue-400', 'bg-blue-50', 'border-blue-400')
         
-        // Remove after 2 seconds
         setTimeout(() => {
             card.classList.remove('ring-2', 'ring-blue-400', 'bg-blue-50', 'border-blue-400')
-            card.classList.add('border-gray-200') // restore standard border
+            card.classList.add('border-gray-200')
         }, 2000)
       }
     }
   }
 
   return (
-    // Added ID for scrolling target
     <div 
       id={`comment-${comment.id}`}
       className={`${isFirstLevelReply ? 'ml-8 border-l-2 border-blue-100 pl-4' : ''} transition-colors duration-500`}
     >
-      {/* Added class 'comment-card' for selecting the specific card div for the glow effect */}
       <div className="comment-card bg-gray-50 rounded-xl p-3 border border-gray-200 transition-all duration-300">
         <div className="flex items-start gap-2 mb-2">
-          {/* Avatar */}
           {comment.authorAvatar ? (
             <img 
               src={comment.authorAvatar}
@@ -176,7 +167,6 @@ export function CommentItem({
               </button>
             </div>
             
-            {/* Enhanced Reply Thread Indicator */}
             {comment.replyingToName && (
               <button 
                 onClick={handleJumpToParent}
@@ -192,7 +182,6 @@ export function CommentItem({
             
             <p className="text-gray-800 text-sm leading-relaxed mb-2">{comment.content}</p>
             
-            {/* Image */}
             {comment.imageUrl && (
               <img 
                 src={comment.imageUrl} 
@@ -202,7 +191,6 @@ export function CommentItem({
               />
             )}
             
-            {/* Actions */}
             <div className="flex items-center gap-2 mt-2">
               <button className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-xs font-bold">
                 <ThumbsUp className="h-3 w-3" />
@@ -220,7 +208,6 @@ export function CommentItem({
                 Reply
               </button>
               
-              {/* Collapse/Expand button for replies */}
               {hasReplies && (
                 <button
                   onClick={() => setIsCollapsed(!isCollapsed)}
@@ -244,11 +231,11 @@ export function CommentItem({
         </div>
       </div>
 
-      {/* Inline Reply Box */}
       {showReplyBox && (
         <div className={`mt-3 ${depth === 0 ? 'ml-8' : ''}`}>
           <InlineCommentBox
-            postId={postId}
+            contentType={contentType}
+            contentId={contentId}
             eventId={eventId}
             parentCommentId={comment.id}
             replyingTo={comment.authorName}
@@ -258,14 +245,14 @@ export function CommentItem({
         </div>
       )}
       
-      {/* Nested Replies */}
       {hasReplies && !isCollapsed && (
         <div className="space-y-3 mt-3">
           {comment.replies.map(reply => (
             <CommentItem 
               key={reply.id} 
               comment={reply}
-              postId={postId}
+              contentType={contentType}
+              contentId={contentId}
               eventId={eventId}
               onCommentCreated={onCommentCreated}
               depth={depth + 1}
@@ -276,3 +263,4 @@ export function CommentItem({
     </div>
   )
 }
+

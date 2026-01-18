@@ -1,13 +1,14 @@
 // app/(site)/home/page.tsx
 "use client"
 import { useState, useEffect } from "react"
-import { Globe, Users, Megaphone, Loader2, AlertCircle } from "lucide-react"
+import { Newspaper, Calendar, Megaphone, Loader2, AlertCircle } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Organization, EventItem } from "@/app/(site)/home/types"
 import { EventCard } from "@/components/feed/EventCard"
 import { CreateButton } from "@/components/home/CreateButton"
 import { FeedFilters } from "@/components/home/FeedFilters"
 import { AnnouncementCard } from "@/components/feed/AnnouncementCard"
+import { BulletinCard } from "@/components/feed/BulletinCard"
 
 type Announcement = {
   id: string
@@ -18,6 +19,22 @@ type Announcement = {
   imageUrl: string | null
   isPinned: boolean
   likes: number
+  comments: number
+  allowComments: boolean
+  createdAt: string
+}
+
+type Bulletin = {
+  id: string
+  header: string
+  body: string
+  organizerType: string
+  organizerName: string
+  imageUrls: string[]
+  isPinned: boolean
+  likes: number
+  comments: number
+  allowComments: boolean
   createdAt: string
 }
 
@@ -27,7 +44,7 @@ export default function HomePage() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  const [activeFeedFilter, setActiveFeedFilter] = useState("feed")
+  const [activeFeedFilter, setActiveFeedFilter] = useState("bulletin")
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedAnnouncementSource, setSelectedAnnouncementSource] = useState<string | null>("all")
   const [hiddenEvents, setHiddenEvents] = useState<Set<string>>(new Set())
@@ -35,171 +52,167 @@ export default function HomePage() {
   
   const [events, setEvents] = useState<EventItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [bulletins, setBulletins] = useState<Bulletin[]>([])
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
   const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
+  const loadEvents = async () => {
+    try {
+      const { data: eventsData, error: eventsError } = await supabase
+        .from('events')
+        .select(`
+          *,
+          creator_org:organizations(name)
+        `)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false })
 
-const loadEvents = async () => {
-  try {
-    const { data: eventsData, error: eventsError } = await supabase
-      .from('events')
-      .select(`
-        *,
-        creator_org:organizations(name)
-      `)
-      .order('is_pinned', { ascending: false })
-      .order('created_at', { ascending: false })
+      if (eventsError) throw eventsError
 
-    if (eventsError) throw eventsError
-
-    const eventIds = eventsData.map((e: any) => e.id)
-    
-    // Updated query to include comments count and posting identity fields
-    const { data: allPosts, error: postsError } = await supabase
-      .from('posts')
-      .select('*, posted_as_type, posted_as_org_id, comments')  // ← Added 'comments' field
-      .in('event_id', eventIds)
-      .order('created_at', { ascending: false })
-
-    if (postsError) throw postsError
-
-    const postsByEvent = new Map<string, any[]>()
-    allPosts.forEach((post: any) => {
-      if (!postsByEvent.has(post.event_id)) {
-        postsByEvent.set(post.event_id, [])
-      }
-      const eventPosts = postsByEvent.get(post.event_id)!
-      if (eventPosts.length < 3) {
-        eventPosts.push(post)
-      }
-    })
-
-    // Fetch author profiles with avatar URLs
-    const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
-    const { data: authorsData } = await supabase
-      .from('profiles')
-      .select('id, first_name, last_name, avatar_url')
-      .in('id', authorIds)
-
-    const authorMap = new Map(
-      authorsData?.map(author => [
-        author.id, 
-        {
-          name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
-          avatarUrl: author.avatar_url
-        }
-      ]) || []
-    )
-
-    // Fetch organization data for posts posted as organizations
-    const orgIds = [...new Set(
-      allPosts
-        .filter((p: any) => p.posted_as_type === 'organization' && p.posted_as_org_id)
-        .map((p: any) => p.posted_as_org_id)
-    )]
-    
-    const { data: orgsData } = await supabase
-      .from('organizations')
-      .select('id, name, avatar_url')
-      .in('id', orgIds)
-
-    const orgMap = new Map(
-      orgsData?.map(org => [
-        org.id,
-        {
-          name: org.name,
-          avatarUrl: org.avatar_url
-        }
-      ]) || []
-    )
-
-    const mappedEvents: EventItem[] = eventsData.map((row: any) => {
-      const start = new Date(row.start_date)
-      const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const eventIds = eventsData.map((e: any) => e.id)
       
-      let organizerName = "Unknown"
-      let organizerType = "user"
-      
-      if (row.creator_type === 'faith_admin') {
-        organizerName = "FAITH Administration"
-        organizerType = "faith" 
-      } else if (row.creator_type === 'organization') {
-        organizerName = row.creator_org?.name || "Organization"
-        organizerType = "organization"
-      }
+      const { data: allPosts, error: postsError } = await supabase
+        .from('posts')
+        .select('*, posted_as_type, posted_as_org_id, comments')
+        .in('event_id', eventIds)
+        .order('created_at', { ascending: false })
 
-      const visibilityMap: Record<string, string> = {
-        'public': 'Public',
-        'organization': 'Selected Orgs',
-        'department': 'Selected Depts',
-        'course': 'Selected Courses',
-        'mixed': 'Custom Group'
-      }
+      if (postsError) throw postsError
 
-      const eventPosts = postsByEvent.get(row.id) || []
-      const posts = eventPosts.map((p: any) => {
-        // Determine display name and avatar based on posting identity
-        let displayName = 'Unknown User'
-        let displayAvatar = null
-        let displayAuthorType = 'user'
-
-        if (p.posted_as_type === 'faith_admin') {
-          displayName = 'FAITH Administration'
-          displayAvatar = null
-          displayAuthorType = 'faith_admin'
-        } else if (p.posted_as_type === 'organization' && p.posted_as_org_id) {
-          const orgData = orgMap.get(p.posted_as_org_id)
-          displayName = orgData?.name || 'Organization'
-          displayAvatar = orgData?.avatarUrl || null
-          displayAuthorType = 'organization'
-        } else {
-          // Default to user
-          const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
-          displayName = authorData.name
-          displayAvatar = authorData.avatarUrl
-          displayAuthorType = 'user'
+      const postsByEvent = new Map<string, any[]>()
+      allPosts.forEach((post: any) => {
+        if (!postsByEvent.has(post.event_id)) {
+          postsByEvent.set(post.event_id, [])
         }
-
-        return {
-          id: p.id,
-          author: displayName,
-          authorId: p.author_id,
-          authorType: displayAuthorType,
-          avatarUrl: displayAvatar,
-          content: p.content || "",
-          time: new Date(p.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          }),
-          likes: p.likes || 0,
-          comments: p.comments || 0,  // ← Now includes comment count
-          imageUrls: p.image_urls || []
+        const eventPosts = postsByEvent.get(post.event_id)!
+        if (eventPosts.length < 3) {
+          eventPosts.push(post)
         }
       })
 
-      return {
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        organizer: { type: organizerType, name: organizerName },
-        date: dateStr,
-        tags: row.tags || [],
-        visibility: visibilityMap[row.participant_type] || 'Restricted',
-        visibilityType: row.participant_type,
-        postingRestricted: row.who_can_post === 'officers',
-        isPinned: row.is_pinned,
-        participants: row.participant_count || 0,
-        totalPosts: row.post_count || 0,
-        posts: posts
-      }
-    })
+      const authorIds = [...new Set(allPosts.map((p: any) => p.author_id))]
+      const { data: authorsData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar_url')
+        .in('id', authorIds)
 
-    setEvents(mappedEvents)
-  } catch (err) {
-    console.error("Error loading events:", err)
+      const authorMap = new Map(
+        authorsData?.map(author => [
+          author.id, 
+          {
+            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
+            avatarUrl: author.avatar_url
+          }
+        ]) || []
+      )
+
+      const orgIds = [...new Set(
+        allPosts
+          .filter((p: any) => p.posted_as_type === 'organization' && p.posted_as_org_id)
+          .map((p: any) => p.posted_as_org_id)
+      )]
+      
+      const { data: orgsData } = await supabase
+        .from('organizations')
+        .select('id, name, avatar_url')
+        .in('id', orgIds)
+
+      const orgMap = new Map(
+        orgsData?.map(org => [
+          org.id,
+          {
+            name: org.name,
+            avatarUrl: org.avatar_url
+          }
+        ]) || []
+      )
+
+      const mappedEvents: EventItem[] = eventsData.map((row: any) => {
+        const start = new Date(row.start_date)
+        const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        
+        let organizerName = "Unknown"
+        let organizerType = "user"
+        
+        if (row.creator_type === 'faith_admin') {
+          organizerName = "FAITH Administration"
+          organizerType = "faith" 
+        } else if (row.creator_type === 'organization') {
+          organizerName = row.creator_org?.name || "Organization"
+          organizerType = "organization"
+        }
+
+        const visibilityMap: Record<string, string> = {
+          'public': 'Public',
+          'organization': 'Selected Orgs',
+          'department': 'Selected Depts',
+          'course': 'Selected Courses',
+          'mixed': 'Custom Group'
+        }
+
+        const eventPosts = postsByEvent.get(row.id) || []
+        const posts = eventPosts.map((p: any) => {
+          let displayName = 'Unknown User'
+          let displayAvatar = null
+          let displayAuthorType = 'user'
+
+          if (p.posted_as_type === 'faith_admin') {
+            displayName = 'FAITH Administration'
+            displayAvatar = null
+            displayAuthorType = 'faith_admin'
+          } else if (p.posted_as_type === 'organization' && p.posted_as_org_id) {
+            const orgData = orgMap.get(p.posted_as_org_id)
+            displayName = orgData?.name || 'Organization'
+            displayAvatar = orgData?.avatarUrl || null
+            displayAuthorType = 'organization'
+          } else {
+            const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
+            displayName = authorData.name
+            displayAvatar = authorData.avatarUrl
+            displayAuthorType = 'user'
+          }
+
+          return {
+            id: p.id,
+            author: displayName,
+            authorId: p.author_id,
+            authorType: displayAuthorType,
+            avatarUrl: displayAvatar,
+            content: p.content || "",
+            time: new Date(p.created_at).toLocaleString('en-US', { 
+              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            }),
+            likes: p.likes || 0,
+            comments: p.comments || 0,
+            imageUrls: p.image_urls || []
+          }
+        })
+
+        return {
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          organizer: { type: organizerType, name: organizerName },
+          date: dateStr,
+          tags: row.tags || [],
+          visibility: visibilityMap[row.participant_type] || 'Restricted',
+          visibilityType: row.participant_type,
+          postingRestricted: row.who_can_post === 'officers',
+          isPinned: row.is_pinned,
+          participants: row.participant_count || 0,
+          totalPosts: row.post_count || 0,
+          posts: posts
+        }
+      })
+
+      setEvents(mappedEvents)
+    } catch (err) {
+      console.error("Error loading events:", err)
+    }
   }
-}
+
   const loadAnnouncements = async () => {
     try {
       const { data: announcementsData, error } = await supabase
@@ -234,6 +247,8 @@ const loadEvents = async () => {
           imageUrl: row.image_url,
           isPinned: row.is_pinned,
           likes: row.likes || 0,
+          comments: row.comments || 0,
+          allowComments: row.allow_comments ?? true,
           createdAt: new Date(row.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           })
@@ -243,6 +258,54 @@ const loadEvents = async () => {
       setAnnouncements(mappedAnnouncements)
     } catch (err) {
       console.error("Error loading announcements:", err)
+    }
+  }
+
+  const loadBulletins = async () => {
+    try {
+      const { data: bulletinsData, error } = await supabase
+        .from('bulletins')
+        .select(`
+          *,
+          creator_org:organizations(name)
+        `)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const mappedBulletins: Bulletin[] = bulletinsData.map((row: any) => {
+        let organizerName = "Unknown"
+        let organizerType = "user"
+        
+        if (row.creator_type === 'faith_admin') {
+          organizerName = "FAITH Administration"
+          organizerType = "faith" 
+        } else if (row.creator_type === 'organization') {
+          organizerName = row.creator_org?.name || "Organization"
+          organizerType = "organization"
+        }
+
+        return {
+          id: row.id,
+          header: row.header,
+          body: row.body,
+          organizerType,
+          organizerName,
+          imageUrls: row.image_urls || [],
+          isPinned: row.is_pinned,
+          likes: row.likes || 0,
+          comments: row.comments || 0,
+          allowComments: row.allow_comments ?? true,
+          createdAt: new Date(row.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      })
+
+      setBulletins(mappedBulletins)
+    } catch (err) {
+      console.error("Error loading bulletins:", err)
     }
   }
 
@@ -299,7 +362,7 @@ const loadEvents = async () => {
         ]
         setAllOrganizations(fetchedOrgs)
 
-        await Promise.all([loadEvents(), loadAnnouncements()])
+        await Promise.all([loadEvents(), loadAnnouncements(), loadBulletins()])
 
       } catch (err) {
         console.error("Error loading home data:", err)
@@ -312,8 +375,8 @@ const loadEvents = async () => {
   }, [])
 
   const feedFilters = [
-    { id: "feed", label: "Campus Feed", icon: Globe, color: "blue" },
-    { id: "org", label: "Organization", icon: Users, color: "orange" },
+    { id: "bulletin", label: "Bulletin", icon: Newspaper, color: "blue" },
+    { id: "events", label: "Events", icon: Calendar, color: "orange" },
     { id: "announcements", label: "Announcements", icon: Megaphone, color: "purple" },
   ]
 
@@ -332,7 +395,7 @@ const loadEvents = async () => {
       return false
     }
 
-    if (activeFeedFilter === "org") {
+    if (activeFeedFilter === "events") {
       const isOrgOrFaith = event.organizer.type === "organization" || event.organizer.type === "faith"
       if (!isOrgOrFaith) return false
 
@@ -346,15 +409,11 @@ const loadEvents = async () => {
       return true
     }
 
-    if (activeFeedFilter === "announcements") {
-      return false
-    }
-
-    return true
+    return false
   })
 
   const filteredAnnouncements = announcements.filter(announcement => {
-    if (activeFeedFilter === "org") {
+    if (activeFeedFilter === "events" || activeFeedFilter === "bulletin") {
       return false
     }
 
@@ -373,7 +432,27 @@ const loadEvents = async () => {
       return announcement.organizerName === targetName
     }
 
-    return activeFeedFilter === "feed"
+    return false
+  })
+
+  const filteredBulletins = bulletins.filter(bulletin => {
+    if (activeFeedFilter !== "bulletin") return false
+    
+    if (searchTerm && !bulletin.header.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false
+    }
+
+    const isOrgOrFaith = bulletin.organizerType === "organization" || bulletin.organizerType === "faith"
+    if (!isOrgOrFaith) return false
+
+    if (selectedOrg) {
+      if (selectedOrg === 'faith_admin') {
+         return bulletin.organizerType === 'faith'
+      }
+      const targetOrgName = allOrganizations.find(o => o.id === selectedOrg)?.name
+      return bulletin.organizerName === targetOrgName
+    }
+    return true
   })
 
   return (
@@ -383,8 +462,9 @@ const loadEvents = async () => {
           <div>
             <h1 className="text-3xl font-black text-gray-900 mb-1">Braveboard</h1>
             <p className="text-gray-600 text-sm">
-              {activeFeedFilter === "feed" && "See what's happening across campus"}
-              {activeFeedFilter === "org" && "Organization updates and events"}
+              {activeFeedFilter === "bulletin" && !selectedOrg && "Community updates and posts"}
+              {activeFeedFilter === "bulletin" && selectedOrg && "Organization bulletins and updates"}
+              {activeFeedFilter === "events" && "Organization events and activities"}
               {activeFeedFilter === "announcements" && "Official campus announcements"}
             </p>
           </div>
@@ -439,13 +519,19 @@ const loadEvents = async () => {
           </div>
         ) : (
           <>
-            {(activeFeedFilter === "feed" || activeFeedFilter === "announcements") && 
-              filteredAnnouncements.map(announcement => (
-                <AnnouncementCard key={announcement.id} announcement={announcement} />
+            {activeFeedFilter === "bulletin" && 
+              filteredBulletins.map(bulletin => (
+                <BulletinCard key={bulletin.id} bulletin={bulletin} onUpdate={loadBulletins} />
               ))
             }
             
-            {activeFeedFilter !== "announcements" && 
+            {activeFeedFilter === "announcements" && 
+              filteredAnnouncements.map(announcement => (
+                <AnnouncementCard key={announcement.id} announcement={announcement} onUpdate={loadAnnouncements} />
+              ))
+            }
+            
+            {activeFeedFilter === "events" && 
               filteredEvents.map(event => (
                 <EventCard 
                   key={event.id}
@@ -457,7 +543,7 @@ const loadEvents = async () => {
               ))
             }
 
-            {filteredEvents.length === 0 && filteredAnnouncements.length === 0 && (
+            {filteredEvents.length === 0 && filteredAnnouncements.length === 0 && filteredBulletins.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                 <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
                 <p className="text-gray-500 font-medium">No content found matching your criteria.</p>
