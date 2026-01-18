@@ -7,11 +7,11 @@ import {
   Shield, 
   Users, 
   Clock, 
-  MoreVertical, 
   CornerUpLeft, 
   ChevronDown, 
   ChevronUp 
 } from "lucide-react"
+import { CommentOptionsMenu } from "@/components/menus/CommentOptionsMenu"
 import { InlineCommentBox } from "./InlineCommentBox"
 
 type Comment = {
@@ -162,9 +162,11 @@ export function CommentItem({
                   {comment.createdAt}
                 </span>
               </div>
-              <button className="p-1 hover:bg-gray-200 rounded transition-colors">
-                <MoreVertical className="h-4 w-4 text-gray-400" />
-              </button>
+              <CommentOptionsMenu
+                commentId={comment.id}
+                authorId={comment.authorId}
+                onUpdate={onCommentCreated}
+              />
             </div>
             
             {comment.replyingToName && (
@@ -263,4 +265,3 @@ export function CommentItem({
     </div>
   )
 }
-

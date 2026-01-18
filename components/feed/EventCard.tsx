@@ -1,11 +1,12 @@
-// components/feed/EventCard.tsx
+// components/feed/EventCard.tsx - REPLACE ENTIRE FILE
 "use client"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Calendar, Users, MessageCircle, Pin, ArrowRight, MoreVertical, Eye, EyeOff, Plus, Shield } from "lucide-react"
+import { Calendar, Users, MessageCircle, Pin, ArrowRight, Eye, EyeOff, Plus, Shield } from "lucide-react"
 import { EventItem } from "@/app/(site)/home/types"
 import { PostCard } from "./PostCard"
 import { CreatePostDialog } from "@/components/posts/CreatePostDialog"
+import { EventOptionsMenu } from "@/components/menus/EventOptionsMenu"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface EventCardProps {
@@ -145,12 +146,10 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
                 </div>
               </div>
 
-              <button 
-                onClick={(e) => e.stopPropagation()}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <MoreVertical className="h-5 w-5" />
-              </button>
+              <EventOptionsMenu 
+                eventId={event.id} 
+                onUpdate={() => window.location.reload()}
+              />
             </div>
 
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">

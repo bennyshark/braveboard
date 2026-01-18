@@ -1,7 +1,8 @@
 // components/feed/AnnouncementCard.tsx
 "use client"
 import { useState } from "react"
-import { Pin, Clock, ThumbsUp, MoreVertical, Shield, Users, MessageCircle, ChevronDown, ChevronUp } from "lucide-react"
+import { Pin, Clock, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, Shield, Users } from "lucide-react"
+import { AnnouncementOptionsMenu } from "@/components/menus/AnnouncementOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
 
@@ -79,9 +80,12 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                 </div>
 
                 {/* More Options Button */}
-                <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                  <MoreVertical className="h-4 w-4" />
-                </button>
+                <AnnouncementOptionsMenu
+                  announcementId={announcement.id}
+                  onUpdate={() => {
+                    if (onUpdate) onUpdate()
+                  }}
+                />
               </div>
             </div>
           </div>

@@ -1,7 +1,8 @@
 // components/feed/PostCard.tsx
 "use client"
 import { useState, useEffect } from "react"
-import { MessageCircle, Share2, Clock, Image, MoreVertical, Shield, Users, ChevronDown, ChevronUp } from "lucide-react"
+import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
+import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
@@ -30,6 +31,8 @@ export function PostCard({ post, eventId }: PostCardProps) {
   })
   const [loading, setLoading] = useState(true)
   const [postEventId, setPostEventId] = useState<string | null>(eventId || null)
+  const [editedAt, setEditedAt] = useState<string | null>(null)
+  const [pinOrder, setPinOrder] = useState<number | null>(null)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,7 +44,7 @@ export function PostCard({ post, eventId }: PostCardProps) {
       try {
         const { data: postData } = await supabase
           .from('posts')
-          .select('posted_as_type, posted_as_org_id, event_id, comments')
+          .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order')
           .eq('id', post.id)
           .single()
 
@@ -55,6 +58,8 @@ export function PostCard({ post, eventId }: PostCardProps) {
         }
 
         setCommentCount(postData.comments || 0)
+        setEditedAt(postData.edited_at)
+        setPinOrder(postData.pin_order)
 
         if (postData.posted_as_type === 'user') {
           setDisplayIdentity({
@@ -162,8 +167,8 @@ export function PostCard({ post, eventId }: PostCardProps) {
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h5 className="font-bold text-gray-900">{displayIdentity.name}</h5>
                     {displayIdentity.type === 'faith_admin' && (
                       <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs font-bold">
@@ -177,10 +182,26 @@ export function PostCard({ post, eventId }: PostCardProps) {
                         Org
                       </span>
                     )}
+                    {pinOrder && (
+                      <span className="inline-flex items-center gap-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-xs font-bold">
+                        <Pin className="h-3 w-3 fill-current" />
+                        Pinned {pinOrder === 1 ? '1st' : pinOrder === 2 ? '2nd' : '3rd'}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
                     <Clock className="h-3 w-3" />
                     <span>{post.time}</span>
+                    {editedAt && (
+                      <>
+                        <span>•</span>
+                        <span className="text-gray-400 italic">
+                          Edited {new Date(editedAt).toLocaleString('en-US', { 
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                          })}
+                        </span>
+                      </>
+                    )}
                     {post.imageUrls.length > 0 && (
                       <>
                         <span>•</span>
@@ -192,9 +213,16 @@ export function PostCard({ post, eventId }: PostCardProps) {
                     )}
                   </div>
                 </div>
-                <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
-                  <MoreVertical className="h-4 w-4" />
-                </button>
+                {postEventId && (
+                  <PostOptionsMenu
+                    postId={post.id}
+                    eventId={postEventId}
+                    authorId={post.authorId}
+                    currentPinOrder={pinOrder}
+                    content={post.content}
+                    onUpdate={() => window.location.reload()}
+                  />
+                )}
               </div>
             </div>
           </div>
