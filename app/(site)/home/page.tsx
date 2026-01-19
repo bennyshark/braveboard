@@ -1,6 +1,6 @@
-// app/(site)/home/page.tsx - KEY CHANGES: Remove window.location.reload()
 "use client"
-import { useState, useEffect } from "react"
+
+import { useState, useEffect, Suspense } from "react" // Added Suspense import
 import { Newspaper, Calendar, Megaphone, Loader2, AlertCircle } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Organization, EventItem } from "@/app/(site)/home/types"
@@ -11,6 +11,7 @@ import { AnnouncementCard } from "@/components/feed/AnnouncementCard"
 import { BulletinCard } from "@/components/feed/BulletinCard"
 import { useSearchParams } from "next/navigation"
 
+// --- TYPES ---
 type Announcement = {
   id: string
   header: string
@@ -39,7 +40,18 @@ type Bulletin = {
   createdAt: string
 }
 
-export default function HomePage() {
+// --- LOADING FALLBACK COMPONENT ---
+function HomeLoading() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+      <Loader2 className="h-10 w-10 animate-spin mb-4 text-blue-500" />
+      <p>Loading campus content...</p>
+    </div>
+  )
+}
+
+// --- MAIN CONTENT COMPONENT (Inner) ---
+function HomeContent() {
   const searchParams = useSearchParams()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -514,10 +526,7 @@ export default function HomePage() {
 
       <div className="space-y-5">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-            <Loader2 className="h-10 w-10 animate-spin mb-4 text-blue-500" />
-            <p>Loading campus content...</p>
-          </div>
+          <HomeLoading />
         ) : (
           <>
             {activeFeedFilter === "bulletin" && 
@@ -555,5 +564,14 @@ export default function HomePage() {
         )}
       </div>
     </div>
+  )
+}
+
+// --- EXPORTED DEFAULT COMPONENT ---
+export default function HomePage() {
+  return (
+    <Suspense fallback={<HomeLoading />}>
+      <HomeContent />
+    </Suspense>
   )
 }
