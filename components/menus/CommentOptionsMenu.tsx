@@ -1,7 +1,7 @@
 // components/menus/CommentOptionsMenu.tsx
 "use client"
 import { useState, useRef, useEffect } from "react"
-import { MoreVertical, Trash2 } from "lucide-react"
+import { MoreVertical, Trash2, Loader2 } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface CommentOptionsMenuProps {
@@ -20,6 +20,7 @@ export function CommentOptionsMenu({
   const [showMenu, setShowMenu] = useState(false)
   const [canDelete, setCanDelete] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const supabase = createBrowserClient(
@@ -70,6 +71,7 @@ export function CommentOptionsMenu({
     
     if (!confirm(confirmMsg)) return
 
+    setDeleting(true)
     try {
       if (hasReplies) {
         // Mark as deleted, keep the comment for reply chain
@@ -82,7 +84,10 @@ export function CommentOptionsMenu({
           })
           .eq('id', commentId)
         
-        if (error) throw error
+        if (error) {
+          console.error('Error marking comment as deleted:', error)
+          throw error
+        }
       } else {
         // Actually delete if no replies
         const { error } = await supabase
@@ -90,14 +95,19 @@ export function CommentOptionsMenu({
           .delete()
           .eq('id', commentId)
         
-        if (error) throw error
+        if (error) {
+          console.error('Error deleting comment:', error)
+          throw error
+        }
       }
       
       setShowMenu(false)
       onUpdate()
     } catch (error: any) {
-      console.error('Error deleting comment:', error)
-      alert(`Failed to delete: ${error.message}`)
+      console.error('Error in handleDelete:', error)
+      alert(`Failed to delete comment: ${error.message}`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -110,12 +120,17 @@ export function CommentOptionsMenu({
           e.stopPropagation()
           setShowMenu(!showMenu)
         }}
-        className="p-1 hover:bg-gray-200 rounded transition-colors"
+        disabled={deleting}
+        className="p-1 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
       >
-        <MoreVertical className="h-4 w-4 text-gray-400" />
+        {deleting ? (
+          <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
+        ) : (
+          <MoreVertical className="h-4 w-4 text-gray-400" />
+        )}
       </button>
 
-      {showMenu && (
+      {showMenu && !deleting && (
         <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border-2 border-gray-200 z-50 overflow-hidden">
           <button
             onClick={(e) => {

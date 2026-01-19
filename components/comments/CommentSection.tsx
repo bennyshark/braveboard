@@ -20,6 +20,7 @@ type Comment = {
   imageUrl: string | null
   likes: number
   createdAt: string
+  createdAtTimestamp: number
   authorId: string
   authorName: string
   authorAvatar: string | null
@@ -29,6 +30,7 @@ type Comment = {
   replies: Comment[]
   replyingToName?: string | null
   isDeleted?: boolean
+  mostRecentReplyTimestamp?: number
 }
 
 export function CommentSection({ contentType, contentId, eventId, initialCount = 0 }: CommentSectionProps) {
@@ -119,14 +121,17 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
 
         commentNameMap.set(c.id, displayName)
 
+        const createdAtDate = new Date(c.created_at)
+
         return {
           id: c.id,
           content: c.content,
           imageUrl: c.image_url,
           likes: c.likes || 0,
-          createdAt: new Date(c.created_at).toLocaleString('en-US', { 
+          createdAt: createdAtDate.toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           }),
+          createdAtTimestamp: createdAtDate.getTime(),
           authorId: c.author_id,
           authorName: displayName,
           authorAvatar: displayAvatar,
@@ -157,6 +162,17 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
       const attachReplies = (comment: Comment) => {
         const replies = repliesMap.get(comment.id) || []
         comment.replies = replies
+        
+        // Calculate most recent reply timestamp
+        if (replies.length > 0) {
+          const mostRecentReply = replies.reduce((latest, current) => 
+            current.createdAtTimestamp > latest.createdAtTimestamp ? current : latest
+          )
+          comment.mostRecentReplyTimestamp = mostRecentReply.createdAtTimestamp
+        } else {
+          comment.mostRecentReplyTimestamp = comment.createdAtTimestamp
+        }
+        
         replies.forEach(reply => attachReplies(reply))
       }
 
@@ -184,28 +200,32 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
   const getPreviewComments = () => {
     if (comments.length === 0) return []
     
-    const preview: Comment[] = []
+    // Sort comments by most recent activity (comment or its most recent reply)
+    const sortedComments = [...comments].sort((a, b) => {
+      const aTime = a.mostRecentReplyTimestamp || a.createdAtTimestamp
+      const bTime = b.mostRecentReplyTimestamp || b.createdAtTimestamp
+      return bTime - aTime // Descending order (most recent first)
+    })
     
-    const mostRecentComment = { ...comments[comments.length - 1] }
-    if (mostRecentComment.replies.length > 0) {
-      const recentReplies = mostRecentComment.replies.slice(-3)
-      mostRecentComment.replies = recentReplies
-    }
-    preview.push(mostRecentComment)
+    // Take top 3 comments
+    const top3 = sortedComments.slice(0, 3)
     
-    if (comments.length > 1) {
-      const secondRecent = { ...comments[comments.length - 2] }
-      secondRecent.replies = []
-      preview.unshift(secondRecent)
-    }
+    // For each comment, keep only top 3 most recent replies
+    const preview = top3.map(comment => {
+      const commentCopy = { ...comment }
+      
+      if (commentCopy.replies.length > 3) {
+        // Sort replies by timestamp descending and take top 3
+        const sortedReplies = [...commentCopy.replies].sort((a, b) => 
+          b.createdAtTimestamp - a.createdAtTimestamp
+        )
+        commentCopy.replies = sortedReplies.slice(0, 3)
+      }
+      
+      return commentCopy
+    })
     
-    if (comments.length > 2) {
-      const thirdRecent = { ...comments[comments.length - 3] }
-      thirdRecent.replies = []
-      preview.unshift(thirdRecent)
-    }
-    
-    return preview.reverse()
+    return preview
   }
 
   const totalCommentCount = () => {
@@ -220,7 +240,8 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
 
   const previewComments = getPreviewComments()
   const totalCount = totalCommentCount()
-  const hasMore = totalCount > previewComments.length
+  const hasMore = totalCount > previewComments.length || 
+                  previewComments.some(c => c.replies.length < (comments.find(original => original.id === c.id)?.replies.length || 0))
 
   return (
     <>
