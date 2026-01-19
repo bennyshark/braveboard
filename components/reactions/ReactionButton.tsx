@@ -150,16 +150,17 @@ export function ReactionButton({ contentType, contentId, onReactionChange }: Rea
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <button
-        onClick={() => handleReaction('like')}
-        disabled={isLoading}
-        title={currentReactionData ? currentReactionData.label : 'Like'}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-bold ${
-          currentReaction
-            ? 'bg-blue-100 text-blue-700'
-            : 'text-gray-700 hover:bg-gray-100'
-        } ${isLoading ? 'opacity-50 cursor-wait' : ''}`}
-      >
+<button
+  onClick={() => handleReaction(currentReaction || 'like')} 
+  
+  disabled={isLoading}
+  title={currentReactionData ? currentReactionData.label : 'Like'}
+  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-bold ${
+    currentReaction
+      ? 'bg-blue-100 text-blue-700'
+      : 'text-gray-700 hover:bg-gray-100'
+  } ${isLoading ? 'opacity-50 cursor-wait' : ''}`}
+>
         {currentReactionData ? (
           <span className="text-base">{currentReactionData.emoji}</span>
         ) : (
