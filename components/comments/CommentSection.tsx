@@ -1,4 +1,4 @@
-// components/comments/CommentSection.tsx
+// components/comments/CommentSection.tsx - UPDATED to include reaction_count
 "use client"
 import { useState, useEffect } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
@@ -19,6 +19,7 @@ type Comment = {
   content: string
   imageUrl: string | null
   likes: number
+  reactionCount?: number
   createdAt: string
   createdAtTimestamp: number
   authorId: string
@@ -128,6 +129,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
           content: c.content,
           imageUrl: c.image_url,
           likes: c.likes || 0,
+          reactionCount: c.reaction_count || 0,
           createdAt: createdAtDate.toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           }),
@@ -163,7 +165,6 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         const replies = repliesMap.get(comment.id) || []
         comment.replies = replies
         
-        // Calculate most recent reply timestamp
         if (replies.length > 0) {
           const mostRecentReply = replies.reduce((latest, current) => 
             current.createdAtTimestamp > latest.createdAtTimestamp ? current : latest
@@ -200,22 +201,18 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
   const getPreviewComments = () => {
     if (comments.length === 0) return []
     
-    // Sort comments by most recent activity (comment or its most recent reply)
     const sortedComments = [...comments].sort((a, b) => {
       const aTime = a.mostRecentReplyTimestamp || a.createdAtTimestamp
       const bTime = b.mostRecentReplyTimestamp || b.createdAtTimestamp
-      return bTime - aTime // Descending order (most recent first)
+      return bTime - aTime
     })
     
-    // Take top 3 comments
     const top3 = sortedComments.slice(0, 3)
     
-    // For each comment, keep only top 3 most recent replies
     const preview = top3.map(comment => {
       const commentCopy = { ...comment }
       
       if (commentCopy.replies.length > 3) {
-        // Sort replies by timestamp descending and take top 3
         const sortedReplies = [...commentCopy.replies].sort((a, b) => 
           b.createdAtTimestamp - a.createdAtTimestamp
         )

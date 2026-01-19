@@ -1,8 +1,7 @@
-// components/comments/CommentItem.tsx
+// components/comments/CommentItem.tsx - UPDATED with Reactions
 "use client"
 import { useState } from "react"
 import { 
-  ThumbsUp, 
   Reply, 
   Shield, 
   Users, 
@@ -14,12 +13,15 @@ import {
 } from "lucide-react"
 import { CommentOptionsMenu } from "@/components/menus/CommentOptionsMenu"
 import { InlineCommentBox } from "./InlineCommentBox"
+import { ReactionButton } from "@/components/reactions/ReactionButton"
+import { ReactionSummary } from "@/components/reactions/ReactionSummary"
 
 type Comment = {
   id: string
   content: string
   imageUrl: string | null
   likes: number
+  reactionCount?: number
   createdAt: string
   authorId: string
   authorName: string
@@ -53,6 +55,8 @@ export function CommentItem({
 }: CommentItemProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showReplyBox, setShowReplyBox] = useState(false)
+  const [reactionCount, setReactionCount] = useState(comment.reactionCount || 0)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   const hasReplies = comment.replies.length > 0
   const isDeleted = comment.isDeleted || comment.content === '[Comment deleted]'
   
@@ -111,6 +115,12 @@ export function CommentItem({
   const handleReplyCreated = () => {
     setShowReplyBox(false)
     onCommentCreated()
+  }
+
+  const handleReactionChange = () => {
+    // Reload the comment data to update reaction count
+    onCommentCreated()
+    setRefreshTrigger(prev => prev + 1)
   }
 
   const handleJumpToParent = (e: React.MouseEvent) => {
@@ -235,41 +245,52 @@ export function CommentItem({
             )}
             
             {!isDeleted && (
-              <div className="flex items-center gap-2 mt-2">
-                <button className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-xs font-bold">
-                  <ThumbsUp className="h-3 w-3" />
-                  {comment.likes}
-                </button>
-                <button 
-                  onClick={handleReplyClick}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-xs font-bold ${
-                    showReplyBox 
-                      ? 'text-green-700 bg-green-100' 
-                      : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
-                  }`}
-                >
-                  <Reply className="h-3 w-3" />
-                  Reply
-                </button>
-                
-                {hasReplies && (
-                  <button
-                    onClick={() => setIsCollapsed(!isCollapsed)}
-                    className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors text-xs font-bold ml-auto"
+              <div className="flex items-center justify-between mt-2">
+                <div className="flex items-center gap-2">
+                  <ReactionButton 
+                    contentType="comment"
+                    contentId={comment.id}
+                    onReactionChange={handleReactionChange}
+                  />
+                  <button 
+                    onClick={handleReplyClick}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-xs font-bold ${
+                      showReplyBox 
+                        ? 'text-green-700 bg-green-100' 
+                        : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
+                    }`}
                   >
-                    {isCollapsed ? (
-                      <>
-                        <ChevronDown className="h-3 w-3" />
-                        Show {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="h-3 w-3" />
-                        Hide {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
-                      </>
-                    )}
+                    <Reply className="h-3 w-3" />
+                    Reply
                   </button>
-                )}
+                  
+                  {hasReplies && (
+                    <button
+                      onClick={() => setIsCollapsed(!isCollapsed)}
+                      className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors text-xs font-bold"
+                    >
+                      {isCollapsed ? (
+                        <>
+                          <ChevronDown className="h-3 w-3" />
+                          Show {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
+                        </>
+                      ) : (
+                        <>
+                          <ChevronUp className="h-3 w-3" />
+                          Hide {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Reaction Summary on the right */}
+                <ReactionSummary 
+                  contentType="comment"
+                  contentId={comment.id}
+                  totalCount={reactionCount}
+                  refreshTrigger={refreshTrigger}
+                />
               </div>
             )}
           </div>

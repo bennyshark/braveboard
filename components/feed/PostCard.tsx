@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - ADD onPostDeleted and onPostUpdated props
+// components/feed/PostCard.tsx - UPDATED with Reactions
 "use client"
 import { useState, useEffect } from "react"
 import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
@@ -6,6 +6,8 @@ import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
+import { ReactionButton } from "@/components/reactions/ReactionButton"
+import { ReactionSummary } from "@/components/reactions/ReactionSummary"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface PostCardProps {
@@ -26,6 +28,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
   const [commentCount, setCommentCount] = useState(post.comments)
+  const [reactionCount, setReactionCount] = useState(0)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>({
     type: 'user',
     name: post.author,
@@ -45,7 +49,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     try {
       const { data: postData } = await supabase
         .from('posts')
-        .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order')
+        .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order, reaction_count')
         .eq('id', post.id)
         .single()
 
@@ -59,6 +63,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
       }
 
       setCommentCount(postData.comments || 0)
+      setReactionCount(postData.reaction_count || 0)
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
@@ -105,6 +110,11 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const handlePostUpdate = () => {
     loadPostData()
     if (onPostUpdated) onPostUpdated()
+  }
+
+  const handleReactionChange = () => {
+    loadPostData()
+    setRefreshTrigger(prev => prev + 1)
   }
 
   const getAuthorColor = (type: string) => {
@@ -270,30 +280,41 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-1 pt-2 border-t border-gray-100">
-            <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors">
-              <span className="text-base">👍</span>
-              <span className="text-xs font-bold">{post.likes}</span>
-            </button>
-            <button 
-              onClick={() => setShowComments(!showComments)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
-                showComments 
-                  ? 'bg-blue-100 text-blue-700' 
-                  : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
-              }`}
-            >
-              <MessageCircle className="h-3.5 w-3.5" />
-              <span className="text-xs font-bold">{commentCount}</span>
-              {showComments ? (
-                <ChevronUp className="h-3 w-3" />
-              ) : (
-                <ChevronDown className="h-3 w-3" />
-              )}
-            </button>
-            <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
-              <Share2 className="h-3.5 w-3.5" />
-            </button>
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-1">
+              <ReactionButton 
+                contentType="post"
+                contentId={post.id}
+                onReactionChange={handleReactionChange}
+              />
+              <button 
+                onClick={() => setShowComments(!showComments)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
+                  showComments 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
+                }`}
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                <span className="text-xs font-bold">{commentCount}</span>
+                {showComments ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+              </button>
+              <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
+                <Share2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Reaction Summary on the right */}
+            <ReactionSummary 
+              contentType="post"
+              contentId={post.id}
+              totalCount={reactionCount}
+              refreshTrigger={refreshTrigger}
+            />
           </div>
         </div>
 
