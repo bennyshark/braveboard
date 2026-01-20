@@ -1,8 +1,10 @@
-// components/posts/CreatePostDialog.tsx
+// components/posts/CreatePostDialog.tsx - UPDATED with TagUserSelector
 "use client"
+
 import { useState, useRef, useEffect } from "react"
 import { X, Image as ImageIcon, Loader2, Send, Sparkles, Shield, Users, User, ChevronDown } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
+import { TagUserSelector } from "@/components/tags/TagUserSelector"
 
 interface CreatePostDialogProps {
   isOpen: boolean
@@ -26,10 +28,10 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showIdentityDropdown, setShowIdentityDropdown] = useState(false)
+  const [taggedUsers, setTaggedUsers] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   
-  // Posting identity state
   const [availableIdentities, setAvailableIdentities] = useState<PostingIdentity[]>([])
   const [selectedIdentity, setSelectedIdentity] = useState<PostingIdentity | null>(null)
   const [loading, setLoading] = useState(true)
@@ -39,7 +41,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // Fetch available posting identities
   useEffect(() => {
     if (!isOpen) return
     
@@ -51,7 +52,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
 
         const identities: PostingIdentity[] = []
 
-        // Always add user's personal identity first
         const { data: profile } = await supabase
           .from('profiles')
           .select('first_name, last_name, role')
@@ -68,7 +68,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           icon: 'user'
         })
 
-        // Check if user is FAITH admin
         const isFaithAdmin = profile?.role === 'admin'
         if (isFaithAdmin) {
           identities.push({
@@ -78,7 +77,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           })
         }
 
-        // Get event's participant type and organizations
         const { data: eventData } = await supabase
           .from('events')
           .select('participant_type, participant_orgs')
@@ -88,7 +86,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         const participantType = eventData?.participant_type
         const participantOrgIds = eventData?.participant_orgs || []
 
-        // Get user's organizations where they're officer/admin
         const { data: userOrgs } = await supabase
           .from('user_organizations')
           .select(`
@@ -102,11 +99,9 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         if (userOrgs) {
           let eligibleOrgs: any[]
 
-          // If participant_type is 'public', ALL user's orgs can post
           if (participantType === 'public') {
             eligibleOrgs = userOrgs
           } 
-          // Otherwise, filter to only orgs in participant_orgs
           else if (participantOrgIds.length > 0) {
             eligibleOrgs = userOrgs.filter((uo: any) => 
               participantOrgIds.includes(uo.organization_id)
@@ -126,7 +121,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         }
 
         setAvailableIdentities(identities)
-        setSelectedIdentity(identities[0]) // Default to personal
+        setSelectedIdentity(identities[0])
 
       } catch (error) {
         console.error('Error fetching identities:', error)
@@ -138,7 +133,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
     fetchIdentities()
   }, [isOpen, eventId, supabase])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -208,22 +202,39 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         imageUrls.push(publicUrl)
       }
 
-      // Create post with identity
-      const { error } = await supabase.from('posts').insert({
+      // Create post
+      const { data: postData, error } = await supabase.from('posts').insert({
         event_id: eventId,
         author_id: user.id,
         content: content.trim(),
         image_urls: imageUrls,
         posted_as_type: selectedIdentity.type,
         posted_as_org_id: selectedIdentity.type === 'organization' ? selectedIdentity.id : null
-      })
+      }).select('id').single()
 
       if (error) throw error
+
+      // Create tags
+      if (taggedUsers.length > 0 && postData) {
+        const tagInserts = taggedUsers.map(userId => ({
+          content_type: 'post',
+          content_id: postData.id,
+          tagged_user_id: userId,
+          tagged_by_user_id: user.id
+        }))
+
+        const { error: tagError } = await supabase
+          .from('tags')
+          .insert(tagInserts)
+
+        if (tagError) console.error('Error creating tags:', tagError)
+      }
 
       // Reset form
       setContent("")
       setImages([])
       setImagePreviews([])
+      setTaggedUsers([])
       
       if (onPostCreated) onPostCreated()
       onClose()
@@ -305,7 +316,6 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
                 <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
               </button>
 
-              {/* Dropdown Menu */}
               {showIdentityDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-10 overflow-hidden">
                   {availableIdentities.map((identity, index) => (
@@ -363,6 +373,12 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
               </span>
             </div>
           </div>
+
+          {/* Tag Users */}
+          <TagUserSelector
+            selectedUsers={taggedUsers}
+            onUsersChange={setTaggedUsers}
+          />
 
           {/* Image Previews */}
           {imagePreviews.length > 0 && (

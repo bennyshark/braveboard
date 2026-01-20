@@ -1,12 +1,16 @@
-// components/feed/BulletinCard.tsx - UPDATED with Reactions
+// components/feed/BulletinCard.tsx - UPDATED with new TaggedUsersDisplay
 "use client"
+
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users } from "lucide-react"
 import { BulletinOptionsMenu } from "@/components/menus/BulletinOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
+import { RepostButton } from "@/components/reposts/RepostButton"
+import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
 import { createBrowserClient } from "@supabase/ssr"
 
 type Bulletin = {
@@ -29,11 +33,14 @@ interface BulletinCardProps {
 }
 
 export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
+  const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
   const [reactionCount, setReactionCount] = useState(0)
+  const [repostCount, setRepostCount] = useState(0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [canEditTags, setCanEditTags] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,27 +48,31 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
   )
 
   useEffect(() => {
-    loadReactionCount()
+    loadData()
   }, [bulletin.id])
 
-  const loadReactionCount = async () => {
+  const loadData = async () => {
     try {
-      const { data } = await supabase
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { data: bulletinData } = await supabase
         .from('bulletins')
-        .select('reaction_count')
+        .select('reaction_count, repost_count, created_by')
         .eq('id', bulletin.id)
         .single()
 
-      if (data) {
-        setReactionCount(data.reaction_count || 0)
+      if (bulletinData) {
+        setReactionCount(bulletinData.reaction_count || 0)
+        setRepostCount(bulletinData.repost_count || 0)
+        setCanEditTags(user?.id === bulletinData.created_by)
       }
     } catch (error) {
-      console.error('Error loading reaction count:', error)
+      console.error('Error loading data:', error)
     }
   }
 
   const handleReactionChange = () => {
-    loadReactionCount()
+    loadData()
     setRefreshTrigger(prev => prev + 1)
   }
 
@@ -117,6 +128,14 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
                         <span>{bulletin.imageUrls.length} {bulletin.imageUrls.length === 1 ? 'image' : 'images'}</span>
                       </>
                     )}
+                    {/* Tagged Users Display */}
+                    <span>•</span>
+                    <TaggedUsersDisplay
+                      contentType="bulletin"
+                      contentId={bulletin.id}
+                      canEdit={canEditTags}
+                      onTagsUpdated={loadData}
+                    />
                   </div>
                 </div>
 
@@ -195,14 +214,25 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
                     )}
                   </button>
                 )}
+
+                <RepostButton
+                  contentType="bulletin"
+                  contentId={bulletin.id}
+                  onRepostChange={handleReactionChange}
+                />
               </div>
 
-              <ReactionSummary 
-                contentType="bulletin"
-                contentId={bulletin.id}
-                totalCount={reactionCount}
-                refreshTrigger={refreshTrigger}
-              />
+              <div className="flex items-center gap-2">
+                {repostCount > 0 && (
+                  <span className="text-xs text-gray-500">{repostCount} reposts</span>
+                )}
+                <ReactionSummary 
+                  contentType="bulletin"
+                  contentId={bulletin.id}
+                  totalCount={reactionCount}
+                  refreshTrigger={refreshTrigger}
+                />
+              </div>
             </div>
           </div>
         </div>

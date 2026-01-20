@@ -18,6 +18,7 @@ import {
 import { useState, useEffect, Suspense, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
+import { TagUserSelector } from "@/components/tags/TagUserSelector"
 
 type Organization = {
   id: string
@@ -72,6 +73,7 @@ function EditBulletinForm() {
   const [body, setBody] = useState('')
   const [isPinned, setIsPinned] = useState(false)
   const [allowComments, setAllowComments] = useState(true)
+  const [taggedUsers, setTaggedUsers] = useState<string[]>([])
   
   const [audienceType, setAudienceType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [audOrgs, setAudOrgs] = useState<string[]>([])
@@ -144,6 +146,17 @@ function EditBulletinForm() {
         setAudCourses(bulletinData.audience_courses || [])
         setAllowComments(bulletinData.allow_comments ?? true)
         setIsPinned(bulletinData.is_pinned || false)
+
+        // Load existing tags
+        const { data: tags } = await supabase
+          .from('tags')
+          .select('tagged_user_id')
+          .eq('content_type', 'bulletin')
+          .eq('content_id', bulletinId)
+
+        if (tags) {
+          setTaggedUsers(tags.map(t => t.tagged_user_id))
+        }
         
         setDataLoaded(true)
 
@@ -268,6 +281,28 @@ function EditBulletinForm() {
 
       if (error) throw error
 
+      // Update tags - delete all existing and recreate
+      await supabase
+        .from('tags')
+        .delete()
+        .eq('content_type', 'bulletin')
+        .eq('content_id', bulletinId)
+
+      if (taggedUsers.length > 0) {
+        const tagInserts = taggedUsers.map(tagUserId => ({
+          content_type: 'bulletin',
+          content_id: bulletinId,
+          tagged_user_id: tagUserId,
+          tagged_by_user_id: userId
+        }))
+
+        const { error: tagError } = await supabase
+          .from('tags')
+          .insert(tagInserts)
+
+        if (tagError) console.error('Error creating tags:', tagError)
+      }
+
       alert('Bulletin updated successfully!')
       router.replace('/home')
 
@@ -369,6 +404,12 @@ function EditBulletinForm() {
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg resize-none" 
             />
           </div>
+
+          {/* Tag Users */}
+          <TagUserSelector
+            selectedUsers={taggedUsers}
+            onUsersChange={setTaggedUsers}
+          />
 
           {/* Existing Images */}
           {existingImageUrls.length > 0 && (

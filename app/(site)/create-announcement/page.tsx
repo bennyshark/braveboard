@@ -17,6 +17,7 @@ import {
 import { useState, useEffect, Suspense, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
+import { TagUserSelector } from "@/components/tags/TagUserSelector"
 
 // Define Database Types
 type Organization = {
@@ -71,9 +72,9 @@ function CreateAnnouncementForm() {
   const [header, setHeader] = useState('')
   const [body, setBody] = useState('')
   const [isPinned, setIsPinned] = useState(false)
+  const [taggedUsers, setTaggedUsers] = useState<string[]>([])
   
   // Audience (Visibility)
-  // Default is 'public' for everyone now
   const [audienceType, setAudienceType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [audOrgs, setAudOrgs] = useState<string[]>([])
   const [audDepts, setAudDepts] = useState<string[]>([])
@@ -156,14 +157,11 @@ function CreateAnnouncementForm() {
     
     let initialCreatorType: 'faith_admin' | 'organization' = 'faith_admin'
     let initialOrgId = ''
-    // CHANGED: Default is always public unless specifically requested via URL to be restricted
     let initialAudType: any = 'public' 
 
     if (paramType === 'organization' && paramOrgId && userOrgs.find(o => o.id === paramOrgId)) {
       initialCreatorType = 'organization'
       initialOrgId = paramOrgId
-      // If URL specifically forces organization audience (optional logic, kept simple here)
-      // initialAudType = 'organization' 
     } 
     else if (paramType === 'faith_admin' && isFaithAdmin) {
       initialCreatorType = 'faith_admin'
@@ -172,7 +170,6 @@ function CreateAnnouncementForm() {
     else if (!isFaithAdmin && userOrgs.length > 0) {
       initialCreatorType = 'organization'
       initialOrgId = userOrgs[0].id
-      // CHANGED: Even for orgs, we default to public
       initialAudType = 'public' 
     }
     else {
@@ -187,7 +184,6 @@ function CreateAnnouncementForm() {
   }, [dataLoaded, searchParams, userOrgs, isFaithAdmin])
 
   // --- 3. AUDIENCE RESET LOGIC ---
-  // Reset audience selections when type changes
   useEffect(() => {
     if (!dataLoaded) return
     
@@ -196,11 +192,8 @@ function CreateAnnouncementForm() {
       setAudDepts([])
       setAudCourses([])
     } else if (audienceType === 'organization' || audienceType === 'mixed') {
-      // If switching explicitly to Org audience, pre-fill with their own org for convenience
-      // but only if they are not already public
       const keepOrg = (creatorType === 'organization' && selectedCreatorOrg) ? [selectedCreatorOrg] : []
       
-      // Only set if empty (preserve user selection if they are toggling)
       if(audOrgs.length === 0) {
         setAudOrgs(keepOrg)
       }
@@ -286,10 +279,24 @@ function CreateAnnouncementForm() {
         is_pinned: isPinned && isFaithAdmin,
       }
 
-      console.log('Submitting:', announcementData)
-
-      const { error } = await supabase.from('announcements').insert(announcementData)
+      const { data, error } = await supabase.from('announcements').insert(announcementData).select('id').single()
       if (error) throw error
+
+      // Create tags
+      if (taggedUsers.length > 0 && data) {
+        const tagInserts = taggedUsers.map(userId => ({
+          content_type: 'announcement',
+          content_id: data.id,
+          tagged_user_id: userId,
+          tagged_by_user_id: userId
+        }))
+
+        const { error: tagError } = await supabase
+          .from('tags')
+          .insert(tagInserts)
+
+        if (tagError) console.error('Error creating tags:', tagError)
+      }
 
       alert('Announcement posted successfully!')
       router.replace('/home?tab=announcements')   
@@ -415,6 +422,12 @@ function CreateAnnouncementForm() {
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg resize-none" 
             />
           </div>
+
+          {/* Tag Users */}
+          <TagUserSelector
+            selectedUsers={taggedUsers}
+            onUsersChange={setTaggedUsers}
+          />
 
           {/* Image Upload */}
           <div>

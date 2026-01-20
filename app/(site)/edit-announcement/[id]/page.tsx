@@ -1,3 +1,4 @@
+// app/(site)/edit-announcement/[id]/page.tsx
 "use client"
 
 import { 
@@ -13,6 +14,7 @@ import {
 import { useState, useEffect, Suspense, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
+import { TagUserSelector } from "@/components/tags/TagUserSelector"
 
 // Types
 type Organization = {
@@ -68,6 +70,7 @@ function EditAnnouncementForm() {
   const [header, setHeader] = useState('')
   const [body, setBody] = useState('')
   const [isPinned, setIsPinned] = useState(false)
+  const [taggedUsers, setTaggedUsers] = useState<string[]>([])
   
   const [audienceType, setAudienceType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [audOrgs, setAudOrgs] = useState<string[]>([])
@@ -154,6 +157,17 @@ function EditAnnouncementForm() {
         setAudOrgs(annData.audience_orgs || [])
         setAudDepts(annData.audience_depts || [])
         setAudCourses(annData.audience_courses || [])
+
+        // Load existing tags
+        const { data: tags } = await supabase
+          .from('tags')
+          .select('tagged_user_id')
+          .eq('content_type', 'announcement')
+          .eq('content_id', announcementId)
+
+        if (tags) {
+          setTaggedUsers(tags.map(t => t.tagged_user_id))
+        }
         
         setDataLoaded(true)
 
@@ -261,6 +275,28 @@ function EditAnnouncementForm() {
 
       if (error) throw error
 
+      // Update tags - delete all existing and recreate
+      await supabase
+        .from('tags')
+        .delete()
+        .eq('content_type', 'announcement')
+        .eq('content_id', announcementId)
+
+      if (taggedUsers.length > 0) {
+        const tagInserts = taggedUsers.map(tagUserId => ({
+          content_type: 'announcement',
+          content_id: announcementId,
+          tagged_user_id: tagUserId,
+          tagged_by_user_id: userId
+        }))
+
+        const { error: tagError } = await supabase
+          .from('tags')
+          .insert(tagInserts)
+
+        if (tagError) console.error('Error creating tags:', tagError)
+      }
+
       alert('Announcement updated successfully!')
       router.replace('/home?tab=announcements')
 
@@ -356,6 +392,12 @@ function EditAnnouncementForm() {
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg resize-none" 
             />
           </div>
+
+          {/* Tag Users */}
+          <TagUserSelector
+            selectedUsers={taggedUsers}
+            onUsersChange={setTaggedUsers}
+          />
 
           {/* Image Logic */}
           <div>

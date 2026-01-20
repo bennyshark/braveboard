@@ -1,12 +1,16 @@
-// components/feed/AnnouncementCard.tsx - UPDATED with Reactions
+// components/feed/AnnouncementCard.tsx - UPDATED with new TaggedUsersDisplay
 "use client"
+
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users } from "lucide-react"
 import { AnnouncementOptionsMenu } from "@/components/menus/AnnouncementOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
+import { RepostButton } from "@/components/reposts/RepostButton"
+import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
 import { createBrowserClient } from "@supabase/ssr"
 
 type Announcement = {
@@ -29,10 +33,13 @@ interface AnnouncementCardProps {
 }
 
 export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardProps) {
+  const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [showComments, setShowComments] = useState(true)
   const [reactionCount, setReactionCount] = useState(0)
+  const [repostCount, setRepostCount] = useState(0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [canEditTags, setCanEditTags] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,27 +47,31 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   )
 
   useEffect(() => {
-    loadReactionCount()
+    loadData()
   }, [announcement.id])
 
-  const loadReactionCount = async () => {
+  const loadData = async () => {
     try {
-      const { data } = await supabase
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { data: announcementData } = await supabase
         .from('announcements')
-        .select('reaction_count')
+        .select('reaction_count, repost_count, created_by')
         .eq('id', announcement.id)
         .single()
 
-      if (data) {
-        setReactionCount(data.reaction_count || 0)
+      if (announcementData) {
+        setReactionCount(announcementData.reaction_count || 0)
+        setRepostCount(announcementData.repost_count || 0)
+        setCanEditTags(user?.id === announcementData.created_by)
       }
     } catch (error) {
-      console.error('Error loading reaction count:', error)
+      console.error('Error loading data:', error)
     }
   }
 
   const handleReactionChange = () => {
-    loadReactionCount()
+    loadData()
     setRefreshTrigger(prev => prev + 1)
   }
 
@@ -107,6 +118,14 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{announcement.createdAt}</span>
+                    {/* Tagged Users Display */}
+                    <span>•</span>
+                    <TaggedUsersDisplay
+                      contentType="announcement"
+                      contentId={announcement.id}
+                      canEdit={canEditTags}
+                      onTagsUpdated={loadData}
+                    />
                   </div>
                 </div>
 
@@ -169,14 +188,25 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                     )}
                   </button>
                 )}
+
+                <RepostButton
+                  contentType="announcement"
+                  contentId={announcement.id}
+                  onRepostChange={handleReactionChange}
+                />
               </div>
 
-              <ReactionSummary 
-                contentType="announcement"
-                contentId={announcement.id}
-                totalCount={reactionCount}
-                refreshTrigger={refreshTrigger}
-              />
+              <div className="flex items-center gap-2">
+                {repostCount > 0 && (
+                  <span className="text-xs text-gray-500">{repostCount} reposts</span>
+                )}
+                <ReactionSummary 
+                  contentType="announcement"
+                  contentId={announcement.id}
+                  totalCount={reactionCount}
+                  refreshTrigger={refreshTrigger}
+                />
+              </div>
             </div>
           </div>
         </div>

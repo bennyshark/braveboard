@@ -1,6 +1,8 @@
-// components/feed/PostCard.tsx - UPDATED with Reactions
+// components/feed/PostCard.tsx - UPDATED with TaggedUsersDisplay component
 "use client"
+
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
 import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
@@ -8,6 +10,8 @@ import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
+import { RepostButton } from "@/components/reposts/RepostButton"
+import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface PostCardProps {
@@ -24,11 +28,13 @@ type PostIdentity = {
 }
 
 export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCardProps) {
+  const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
   const [commentCount, setCommentCount] = useState(post.comments)
   const [reactionCount, setReactionCount] = useState(0)
+  const [repostCount, setRepostCount] = useState(0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>({
     type: 'user',
@@ -39,6 +45,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const [postEventId, setPostEventId] = useState<string | null>(eventId || null)
   const [editedAt, setEditedAt] = useState<string | null>(null)
   const [pinOrder, setPinOrder] = useState<number | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [canEditTags, setCanEditTags] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,9 +55,12 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
 
   const loadPostData = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUserId(user?.id || null)
+
       const { data: postData } = await supabase
         .from('posts')
-        .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order, reaction_count')
+        .select('posted_as_type, posted_as_org_id, event_id, comments, edited_at, pin_order, reaction_count, repost_count, author_id')
         .eq('id', post.id)
         .single()
 
@@ -58,12 +69,15 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
         return
       }
 
+      setCanEditTags(user?.id === postData.author_id)
+
       if (!eventId && postData.event_id) {
         setPostEventId(postData.event_id)
       }
 
       setCommentCount(postData.comments || 0)
       setReactionCount(postData.reaction_count || 0)
+      setRepostCount(postData.repost_count || 0)
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
@@ -117,6 +131,10 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     setRefreshTrigger(prev => prev + 1)
   }
 
+  const handleUserClick = (userId: string) => {
+    router.push(`/user/${userId}`)
+  }
+
   const getAuthorColor = (type: string) => {
     switch(type) {
       case "faith_admin": return "from-purple-400 to-purple-600"
@@ -167,26 +185,38 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
         <div className="p-4">
           {/* Header */}
           <div className="flex items-start gap-3 mb-3">
-            {displayIdentity.avatarUrl ? (
-              <img 
-                src={displayIdentity.avatarUrl} 
-                alt={displayIdentity.name}
-                className="h-10 w-10 rounded-lg object-cover flex-shrink-0 shadow-sm"
-              />
-            ) : (
-              <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center text-lg flex-shrink-0 shadow-sm`}>
-                {displayIdentity.type !== 'user' ? (
-                  getIdentityIcon(displayIdentity.type)
-                ) : (
-                  <span className="text-white font-bold text-xs">{getInitials(displayIdentity.name)}</span>
-                )}
-              </div>
-            )}
+            <button
+              onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
+              disabled={displayIdentity.type !== 'user'}
+              className={displayIdentity.type === 'user' ? 'cursor-pointer' : 'cursor-default'}
+            >
+              {displayIdentity.avatarUrl ? (
+                <img 
+                  src={displayIdentity.avatarUrl} 
+                  alt={displayIdentity.name}
+                  className="h-10 w-10 rounded-lg object-cover flex-shrink-0 shadow-sm hover:opacity-80 transition-opacity"
+                />
+              ) : (
+                <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center text-lg flex-shrink-0 shadow-sm`}>
+                  {displayIdentity.type !== 'user' ? (
+                    getIdentityIcon(displayIdentity.type)
+                  ) : (
+                    <span className="text-white font-bold text-xs">{getInitials(displayIdentity.name)}</span>
+                  )}
+                </div>
+              )}
+            </button>
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h5 className="font-bold text-gray-900">{displayIdentity.name}</h5>
+                    <button
+                      onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
+                      disabled={displayIdentity.type !== 'user'}
+                      className={`font-bold text-gray-900 ${displayIdentity.type === 'user' ? 'hover:underline cursor-pointer' : 'cursor-default'}`}
+                    >
+                      {displayIdentity.name}
+                    </button>
                     {displayIdentity.type === 'faith_admin' && (
                       <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs font-bold">
                         <Shield className="h-3 w-3" />
@@ -243,6 +273,16 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Tagged Users - New Component */}
+          <div className="mb-3">
+            <TaggedUsersDisplay
+              contentType="post"
+              contentId={post.id}
+              canEdit={canEditTags}
+              onTagsUpdated={handlePostUpdate}
+            />
           </div>
 
           {/* Content */}
@@ -303,22 +343,32 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                   <ChevronDown className="h-3 w-3" />
                 )}
               </button>
+              <RepostButton
+                contentType="post"
+                contentId={post.id}
+                onRepostChange={handleReactionChange}
+              />
               <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
                 <Share2 className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            {/* Reaction Summary on the right */}
-            <ReactionSummary 
-              contentType="post"
-              contentId={post.id}
-              totalCount={reactionCount}
-              refreshTrigger={refreshTrigger}
-            />
+            {/* Stats */}
+            <div className="flex items-center gap-2">
+              {repostCount > 0 && (
+                <span className="text-xs text-gray-500">{repostCount} reposts</span>
+              )}
+              <ReactionSummary 
+                contentType="post"
+                contentId={post.id}
+                totalCount={reactionCount}
+                refreshTrigger={refreshTrigger}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Comment Section - Collapsible */}
+        {/* Comment Section */}
         {showComments && postEventId && (
           <div className="border-t border-gray-200 p-4 bg-gray-50 animate-in slide-in-from-top-2 duration-200">
             <CommentSection 
@@ -331,7 +381,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
         )}
       </div>
 
-      {/* Image Preview Modal */}
       <ImagePreviewModal
         images={post.imageUrls}
         initialIndex={previewIndex}
