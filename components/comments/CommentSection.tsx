@@ -1,4 +1,4 @@
-// components/comments/CommentSection.tsx - UPDATED to include reaction_count
+// components/comments/CommentSection.tsx
 "use client"
 import { useState, useEffect } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
@@ -304,12 +304,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
               </button>
             )}
           </div>
-        ) : (
-          <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-            <MessageCircle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-500 text-sm">No comments yet. Be the first to comment!</p>
-          </div>
-        )}
+        ) : null}
       </div>
 
       <AllCommentsModal
