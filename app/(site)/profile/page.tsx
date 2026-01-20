@@ -20,7 +20,12 @@ import {
   X,
   Upload,
   Camera,
-  Check
+  Check,
+  Repeat2,
+  AtSign,
+  LayoutGrid,
+  Pin,
+  PinOff
 } from "lucide-react"
 
 type UserProfile = {
@@ -58,20 +63,29 @@ type UserOrganization = {
   joined_at: string
 }
 
-type UserPost = {
+type FeedPost = {
   id: string
+  type: 'post' | 'repost' | 'tagged'
   event_id: string
   content: string
   image_urls: string[]
   likes: number
+  comments: number
+  reaction_count: number
   created_at: string
+  pinned_to_profile: boolean
   event: {
     id: string
     title: string
   }
+  repost_comment?: string
+  reposted_by?: string
+  tagged_by?: string
 }
 
 type DragType = 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | null
+
+const ITEMS_PER_PAGE = 5
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -79,7 +93,6 @@ export default function ProfilePage() {
   const [department, setDepartment] = useState<Department | null>(null)
   const [course, setCourse] = useState<Course | null>(null)
   const [organizations, setOrganizations] = useState<UserOrganization[]>([])
-  const [userPosts, setUserPosts] = useState<UserPost[]>([])
   const [stats, setStats] = useState({
     eventsCreated: 0,
     postsCreated: 0,
@@ -89,6 +102,13 @@ export default function ProfilePage() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editBio, setEditBio] = useState("")
   const [uploading, setUploading] = useState(false)
+  
+  // Feed filter state
+  const [activeFilter, setActiveFilter] = useState<'feed' | 'posts' | 'reposts' | 'tagged'>('feed')
+  const [feedItems, setFeedItems] = useState<FeedPost[]>([])
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const observerTarget = useRef<HTMLDivElement>(null)
   
   // Crop modal state
   const [cropModalOpen, setCropModalOpen] = useState(false)
@@ -110,10 +130,34 @@ export default function ProfilePage() {
   }, [])
 
   useEffect(() => {
+    if (profile) {
+      loadFeedItems(true)
+    }
+  }, [activeFilter, profile])
+
+  useEffect(() => {
     if (imageSrc && canvasRef.current) {
       drawCanvas()
     }
   }, [imageSrc, crop])
+
+  // Infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadFeedItems(false)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current)
+    }
+
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, feedItems])
 
   async function loadProfileData() {
     try {
@@ -180,38 +224,248 @@ export default function ProfilePage() {
         .select('*', { count: 'exact', head: true })
         .eq('author_id', user.id)
 
+      const { count: commentsCount } = await supabase
+        .from('comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('author_id', user.id)
+
       setStats({
         eventsCreated: eventsCount || 0,
         postsCreated: postsCount || 0,
-        interactions: 0
+        interactions: commentsCount || 0
       })
-
-      const { data: postsData } = await supabase
-        .from('posts')
-        .select(`
-          id,
-          event_id,
-          content,
-          image_urls,
-          likes,
-          created_at,
-          event:events (
-            id,
-            title
-          )
-        `)
-        .eq('author_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10)
-
-      if (postsData) {
-        setUserPosts(postsData as any)
-      }
 
     } catch (error) {
       console.error('Error loading profile:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadFeedItems(reset: boolean = false) {
+    if (!profile) return
+    
+    if (reset) {
+      setFeedItems([])
+      setHasMore(true)
+    }
+    
+    setLoadingMore(true)
+
+    try {
+      const offset = reset ? 0 : feedItems.length
+      let items: FeedPost[] = []
+
+      if (activeFilter === 'posts' || activeFilter === 'feed') {
+        // Load user's posts
+        const { data: postsData } = await supabase
+          .from('posts')
+          .select(`
+            id,
+            event_id,
+            content,
+            image_urls,
+            likes,
+            comments,
+            reaction_count,
+            created_at,
+            pinned_to_profile,
+            event:events (
+              id,
+              title
+            )
+          `)
+          .eq('author_id', profile.id)
+          .order('pinned_to_profile', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(offset, offset + ITEMS_PER_PAGE - 1)
+
+        if (postsData) {
+          items = [...items, ...postsData.map((p: any) => ({
+            ...p,
+            type: 'post' as const,
+            likes: p.likes || 0,
+            comments: p.comments || 0,
+            reaction_count: p.reaction_count || 0
+          }))]
+        }
+      }
+
+      if (activeFilter === 'reposts' || activeFilter === 'feed') {
+        // Load user's reposts
+        const { data: repostsData } = await supabase
+          .from('reposts')
+          .select(`
+            id,
+            content_id,
+            content_type,
+            repost_comment,
+            created_at
+          `)
+          .eq('user_id', profile.id)
+          .eq('content_type', 'post')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + ITEMS_PER_PAGE - 1)
+
+        if (repostsData && repostsData.length > 0) {
+          const postIds = repostsData.map(r => r.content_id)
+          const { data: postsData } = await supabase
+            .from('posts')
+            .select(`
+              id,
+              event_id,
+              content,
+              image_urls,
+              likes,
+              comments,
+              reaction_count,
+              created_at,
+              event:events (
+                id,
+                title
+              )
+            `)
+            .in('id', postIds)
+
+          if (postsData) {
+            const repostItems = repostsData.map(repost => {
+              const post = postsData.find((p: any) => p.id === repost.content_id)
+              if (!post) return null
+              
+              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
+              
+              return {
+                id: post.id,
+                type: 'repost' as const,
+                event_id: post.event_id,
+                content: post.content,
+                image_urls: post.image_urls || [],
+                likes: post.likes || 0,
+                comments: post.comments || 0,
+                reaction_count: post.reaction_count || 0,
+                created_at: repost.created_at,
+                pinned_to_profile: false,
+                event: eventData || { id: post.event_id, title: 'Unknown Event' },
+                repost_comment: repost.repost_comment
+              }
+            }).filter(item => item !== null) as FeedPost[]
+            
+            items = [...items, ...repostItems]
+          }
+        }
+      }
+
+      if (activeFilter === 'tagged' || activeFilter === 'feed') {
+        // Load posts where user is tagged
+        const { data: tagsData } = await supabase
+          .from('tags')
+          .select(`
+            id,
+            content_id,
+            content_type,
+            tagged_by_user_id,
+            created_at
+          `)
+          .eq('tagged_user_id', profile.id)
+          .eq('content_type', 'post')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + ITEMS_PER_PAGE - 1)
+
+        if (tagsData && tagsData.length > 0) {
+          const postIds = tagsData.map(t => t.content_id)
+          const { data: postsData } = await supabase
+            .from('posts')
+            .select(`
+              id,
+              event_id,
+              content,
+              image_urls,
+              likes,
+              comments,
+              reaction_count,
+              created_at,
+              event:events (
+                id,
+                title
+              )
+            `)
+            .in('id', postIds)
+
+          if (postsData) {
+            const taggedItems = tagsData.map(tag => {
+              const post = postsData.find((p: any) => p.id === tag.content_id)
+              if (!post) return null
+              
+              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
+              
+              return {
+                id: post.id,
+                type: 'tagged' as const,
+                event_id: post.event_id,
+                content: post.content,
+                image_urls: post.image_urls || [],
+                likes: post.likes || 0,
+                comments: post.comments || 0,
+                reaction_count: post.reaction_count || 0,
+                created_at: tag.created_at,
+                pinned_to_profile: false,
+                event: eventData || { id: post.event_id, title: 'Unknown Event' }
+              }
+            }).filter(item => item !== null) as FeedPost[]
+            
+            items = [...items, ...taggedItems]
+          }
+        }
+      }
+
+      // Sort by created_at for feed
+      if (activeFilter === 'feed') {
+        items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      }
+
+      // Remove duplicates
+      const uniqueItems = items.filter((item, index, self) => 
+        index === self.findIndex(t => t.id === item.id && t.type === item.type)
+      )
+
+      const newItems = reset ? uniqueItems : [...feedItems, ...uniqueItems]
+      setFeedItems(newItems)
+      setHasMore(uniqueItems.length === ITEMS_PER_PAGE)
+
+    } catch (error) {
+      console.error('Error loading feed items:', error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  async function togglePinPost(postId: string, currentlyPinned: boolean) {
+    if (!profile) return
+
+    try {
+      // Check how many posts are already pinned
+      const { count } = await supabase
+        .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('author_id', profile.id)
+        .eq('pinned_to_profile', true)
+
+      if (!currentlyPinned && (count || 0) >= 3) {
+        alert('You can only pin up to 3 posts to your profile')
+        return
+      }
+
+      const { error } = await supabase
+        .from('posts')
+        .update({ pinned_to_profile: !currentlyPinned })
+        .eq('id', postId)
+
+      if (error) throw error
+
+      // Reload feed items
+      loadFeedItems(true)
+    } catch (error) {
+      console.error('Error toggling pin:', error)
     }
   }
 
@@ -229,29 +483,21 @@ export default function ProfilePage() {
       canvas.height = img.height
       setImageSize({ width: img.width, height: img.height })
 
-      // Draw image
       ctx.drawImage(img, 0, 0)
-
-      // Draw overlay
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-      // Clear crop area
       ctx.clearRect(crop.x, crop.y, crop.width, crop.height)
       ctx.drawImage(img, crop.x, crop.y, crop.width, crop.height, crop.x, crop.y, crop.width, crop.height)
-
-      // Draw border
       ctx.strokeStyle = '#3b82f6'
       ctx.lineWidth = 3
       ctx.strokeRect(crop.x, crop.y, crop.width, crop.height)
 
-      // Draw corner handles
       const handleSize = 20
       const handles = [
-        { x: crop.x, y: crop.y }, // NW
-        { x: crop.x + crop.width, y: crop.y }, // NE
-        { x: crop.x, y: crop.y + crop.height }, // SW
-        { x: crop.x + crop.width, y: crop.y + crop.height }, // SE
+        { x: crop.x, y: crop.y },
+        { x: crop.x + crop.width, y: crop.y },
+        { x: crop.x, y: crop.y + crop.height },
+        { x: crop.x + crop.width, y: crop.y + crop.height },
       ]
 
       ctx.fillStyle = '#ffffff'
@@ -263,12 +509,11 @@ export default function ProfilePage() {
         ctx.strokeRect(handle.x - handleSize/2, handle.y - handleSize/2, handleSize, handleSize)
       })
 
-      // Draw edge handles (midpoints)
       const edgeHandles = [
-        { x: crop.x + crop.width/2, y: crop.y }, // N
-        { x: crop.x + crop.width/2, y: crop.y + crop.height }, // S
-        { x: crop.x, y: crop.y + crop.height/2 }, // W
-        { x: crop.x + crop.width, y: crop.y + crop.height/2 }, // E
+        { x: crop.x + crop.width/2, y: crop.y },
+        { x: crop.x + crop.width/2, y: crop.y + crop.height },
+        { x: crop.x, y: crop.y + crop.height/2 },
+        { x: crop.x + crop.width, y: crop.y + crop.height/2 },
       ]
 
       edgeHandles.forEach(handle => {
@@ -293,7 +538,6 @@ export default function ProfilePage() {
         setImageSrc(img.src)
         setCropType(type)
         
-        // Set initial crop based on type
         if (type === 'avatar') {
           const size = Math.min(img.width, img.height) * 0.8
           setCrop({
@@ -303,7 +547,7 @@ export default function ProfilePage() {
             height: size
           })
         } else {
-          const height = Math.min(img.width / 4, img.height * 0.8) // 4:1 aspect ratio for cover
+          const height = Math.min(img.width / 4, img.height * 0.8)
           setCrop({
             x: 0,
             y: (img.height - height) / 2,
@@ -335,19 +579,15 @@ export default function ProfilePage() {
     const handleSize = 20
     const edgeThreshold = 15
 
-    // Check corners
     if (Math.abs(x - crop.x) < handleSize && Math.abs(y - crop.y) < handleSize) return 'nw'
     if (Math.abs(x - (crop.x + crop.width)) < handleSize && Math.abs(y - crop.y) < handleSize) return 'ne'
     if (Math.abs(x - crop.x) < handleSize && Math.abs(y - (crop.y + crop.height)) < handleSize) return 'sw'
     if (Math.abs(x - (crop.x + crop.width)) < handleSize && Math.abs(y - (crop.y + crop.height)) < handleSize) return 'se'
-
-    // Check edges
     if (Math.abs(x - (crop.x + crop.width/2)) < handleSize && Math.abs(y - crop.y) < edgeThreshold) return 'n'
     if (Math.abs(x - (crop.x + crop.width/2)) < handleSize && Math.abs(y - (crop.y + crop.height)) < edgeThreshold) return 's'
     if (Math.abs(x - crop.x) < edgeThreshold && Math.abs(y - (crop.y + crop.height/2)) < handleSize) return 'w'
     if (Math.abs(x - (crop.x + crop.width)) < edgeThreshold && Math.abs(y - (crop.y + crop.height/2)) < handleSize) return 'e'
 
-    // Check if inside crop area for moving
     if (x >= crop.x && x <= crop.x + crop.width && y >= crop.y && y <= crop.y + crop.height) {
       return 'move'
     }
@@ -400,7 +640,6 @@ export default function ProfilePage() {
     const pos = getCursorPosition(e)
 
     if (!dragType) {
-      // Update cursor based on position
       const handle = getHandleAtPosition(pos.x, pos.y)
       canvas.style.cursor = getCursor(handle)
       return
@@ -414,12 +653,9 @@ export default function ProfilePage() {
     if (dragType === 'move') {
       newCrop.x = dragStart.cropX + dx
       newCrop.y = dragStart.cropY + dy
-
-      // Constrain to canvas
       newCrop.x = Math.max(0, Math.min(newCrop.x, imageSize.width - crop.width))
       newCrop.y = Math.max(0, Math.min(newCrop.y, imageSize.height - crop.height))
     } else {
-      // Handle resizing
       const aspectRatio = cropType === 'avatar' ? 1 : 4
 
       if (dragType === 'se') {
@@ -502,7 +738,6 @@ export default function ProfilePage() {
         }
       } else if (dragType === 'n' || dragType === 's' || dragType === 'e' || dragType === 'w') {
         if (cropType === 'avatar') {
-          // For avatar, edge drags also maintain square aspect ratio
           let size = dragStart.cropWidth
           if (dragType === 'e') size = Math.max(50, Math.min(dragStart.cropWidth + dx, imageSize.width - dragStart.cropX))
           else if (dragType === 'w') size = Math.max(50, dragStart.cropWidth - dx)
@@ -515,7 +750,6 @@ export default function ProfilePage() {
           newCrop.width = size
           newCrop.height = size
         } else {
-          // For cover, maintain 4:1 aspect ratio
           if (dragType === 'e') {
             newCrop.width = Math.max(100, Math.min(dragStart.cropWidth + dx, imageSize.width - dragStart.cropX))
             newCrop.height = newCrop.width / aspectRatio
@@ -536,7 +770,6 @@ export default function ProfilePage() {
         }
       }
 
-      // Final bounds check
       if (newCrop.x + newCrop.width > imageSize.width) {
         newCrop.width = imageSize.width - newCrop.x
         if (cropType === 'avatar') newCrop.height = newCrop.width
@@ -565,7 +798,6 @@ export default function ProfilePage() {
     setUploading(true)
 
     try {
-      // Create cropped canvas
       const croppedCanvas = document.createElement('canvas')
       const ctx = croppedCanvas.getContext('2d')
       if (!ctx) return
@@ -588,12 +820,10 @@ export default function ProfilePage() {
         0, 0, croppedCanvas.width, croppedCanvas.height
       )
 
-      // Convert to blob
       const blob = await new Promise<Blob>((resolve) => {
         croppedCanvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 0.95)
       })
 
-      // Upload to Supabase
       const fileExt = 'jpg'
       const fileName = `${profile.id}/${cropType}-${Date.now()}.${fileExt}`
 
@@ -607,7 +837,6 @@ export default function ProfilePage() {
         .from('posts')
         .getPublicUrl(fileName)
 
-      // Update profile
       const updateField = cropType === 'avatar' ? 'avatar_url' : 'cover_url'
       const { error: updateError } = await supabase
         .from('profiles')
@@ -705,6 +934,13 @@ export default function ProfilePage() {
     router.push(`/event/${eventId}`)
   }
 
+  const feedFilters = [
+    { id: 'feed', label: 'Feed', icon: LayoutGrid },
+    { id: 'posts', label: 'Posts', icon: MessageSquare },
+    { id: 'reposts', label: 'Reposts', icon: Repeat2 },
+    { id: 'tagged', label: 'Tagged', icon: AtSign }
+  ]
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12">
@@ -727,7 +963,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 ">
+    <div className="max-w-4xl mx-auto px-4">
       {/* Crop Modal */}
       {cropModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1005,92 +1241,184 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Recent Posts */}
-      {userPosts.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <MessageSquare className="h-5 w-5 text-gray-600" />
-            <h3 className="text-lg font-black text-gray-900">Recent Posts</h3>
-            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">
-              {userPosts.length}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {userPosts.map((post) => (
-              <div 
-                key={post.id}
-                onClick={() => handlePostClick(post.event_id)}
-                className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer group"
-              >
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
-                      {post.event?.title || 'Event'}
-                    </p>
-                    <p className="text-sm text-gray-800 line-clamp-2 mb-2">{post.content}</p>
-                  </div>
-                </div>
-
-                {/* Image Grid */}
-                {post.image_urls.length > 0 && (
-                  <div className={`mb-3 ${
-                    post.image_urls.length === 1 ? 'grid grid-cols-1' :
-                    post.image_urls.length === 2 ? 'grid grid-cols-2 gap-2' :
-                    post.image_urls.length === 3 ? 'grid grid-cols-3 gap-2' :
-                    'grid grid-cols-2 gap-2'
-                  }`}>
-                    {post.image_urls.slice(0, 4).map((url, idx) => (
-                      <div 
-                        key={idx} 
-                        className={`relative overflow-hidden rounded-lg bg-gray-200 ${
-                          post.image_urls.length === 1 ? 'aspect-video col-span-1' :
-                          post.image_urls.length === 3 && idx === 0 ? 'aspect-video col-span-2' :
-                          'aspect-square'
-                        }`}
-                      >
-                        <img 
-                          src={url} 
-                          alt={`Post image ${idx + 1}`} 
-                          className="w-full h-full object-cover"
-                        />
-                        {idx === 3 && post.image_urls.length > 4 && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <span className="text-white text-xl font-bold">
-                              +{post.image_urls.length - 4}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {formatDateTime(post.created_at)}
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    <Heart className="h-3 w-3" />
-                    {post.likes}
-                  </span>
-                  {post.image_urls.length > 0 && (
-                    <>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <ImageIcon className="h-3 w-3" />
-                        {post.image_urls.length}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
+      {/* Feed Filters */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="h-5 w-5 text-gray-600" />
+            <h3 className="text-lg font-black text-gray-900">Activity</h3>
           </div>
         </div>
-      )}
+
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+          {feedFilters.map((filter) => {
+            const Icon = filter.icon
+            return (
+              <button
+                key={filter.id}
+                onClick={() => setActiveFilter(filter.id as any)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition-all ${
+                  activeFilter === filter.id
+                    ? 'bg-blue-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {filter.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Feed Items */}
+        <div className="space-y-3">
+          {feedItems.map((item) => (
+            <div 
+              key={`${item.type}-${item.id}`}
+              onClick={() => handlePostClick(item.event_id)}
+              className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer group relative"
+            >
+              {/* Pin Button for Posts */}
+              {item.type === 'post' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    togglePinPost(item.id, item.pinned_to_profile)
+                  }}
+                  className={`absolute top-3 right-3 p-2 rounded-lg transition-all ${
+                    item.pinned_to_profile
+                      ? 'bg-blue-100 text-blue-600'
+                      : 'bg-white text-gray-400 hover:bg-gray-200 hover:text-gray-600 opacity-0 group-hover:opacity-100'
+                  }`}
+                  title={item.pinned_to_profile ? 'Unpin from profile' : 'Pin to profile (max 3)'}
+                >
+                  {item.pinned_to_profile ? (
+                    <Pin className="h-4 w-4 fill-current" />
+                  ) : (
+                    <PinOff className="h-4 w-4" />
+                  )}
+                </button>
+              )}
+
+              {/* Type Badge */}
+              <div className="flex items-center gap-2 mb-2">
+                {item.type === 'repost' && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 font-bold">
+                    <Repeat2 className="h-3 w-3" />
+                    Reposted
+                  </span>
+                )}
+                {item.type === 'tagged' && (
+                  <span className="flex items-center gap-1 text-xs text-purple-600 font-bold">
+                    <AtSign className="h-3 w-3" />
+                    Tagged
+                  </span>
+                )}
+                {item.pinned_to_profile && (
+                  <span className="flex items-center gap-1 text-xs text-blue-600 font-bold">
+                    <Pin className="h-3 w-3 fill-current" />
+                    Pinned
+                  </span>
+                )}
+              </div>
+
+              {/* Repost Comment */}
+              {item.type === 'repost' && item.repost_comment && (
+                <div className="mb-2 p-2 bg-white rounded-lg border-l-4 border-green-500">
+                  <p className="text-sm text-gray-700 italic">{item.repost_comment}</p>
+                </div>
+              )}
+
+              <div className="flex items-start gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
+                    {item.event?.title || 'Event'}
+                  </p>
+                  <p className="text-sm text-gray-800 line-clamp-2 mb-2">{item.content}</p>
+                </div>
+              </div>
+
+              {/* Image Grid */}
+              {item.image_urls.length > 0 && (
+                <div className={`mb-3 ${
+                  item.image_urls.length === 1 ? 'grid grid-cols-1' :
+                  item.image_urls.length === 2 ? 'grid grid-cols-2 gap-2' :
+                  item.image_urls.length === 3 ? 'grid grid-cols-3 gap-2' :
+                  'grid grid-cols-2 gap-2'
+                }`}>
+                  {item.image_urls.slice(0, 4).map((url, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`relative overflow-hidden rounded-lg bg-gray-200 ${
+                        item.image_urls.length === 1 ? 'aspect-video col-span-1' :
+                        item.image_urls.length === 3 && idx === 0 ? 'aspect-video col-span-2' :
+                        'aspect-square'
+                      }`}
+                    >
+                      <img 
+                        src={url} 
+                        alt={`Post image ${idx + 1}`} 
+                        className="w-full h-full object-cover"
+                      />
+                      {idx === 3 && item.image_urls.length > 4 && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <span className="text-white text-xl font-bold">
+                            +{item.image_urls.length - 4}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {formatDateTime(item.created_at)}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Heart className="h-3 w-3" />
+                  {item.reaction_count || 0}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <MessageSquare className="h-3 w-3" />
+                  {item.comments}
+                </span>
+                {item.image_urls.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <ImageIcon className="h-3 w-3" />
+                      {item.image_urls.length}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Loading More */}
+          {loadingMore && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+            </div>
+          )}
+
+          {/* Observer Target */}
+          <div ref={observerTarget} className="h-4" />
+
+          {/* No Items */}
+          {!loadingMore && feedItems.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <p className="font-medium">No {activeFilter} found</p>
+              <p className="text-sm">Start engaging with events to see activity here</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

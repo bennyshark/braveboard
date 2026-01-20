@@ -1,12 +1,13 @@
 // app/(site)/user/[id]/page.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { useParams, useRouter } from "next/navigation"
 import { 
   User, Mail, BookOpen, Building2, Shield, Users, Loader2, AlertCircle,
-  Calendar, MessageSquare, Heart, ArrowLeft
+  Calendar, MessageSquare, Heart, ArrowLeft, Clock, Image as ImageIcon,
+  LayoutGrid, Repeat2, AtSign, Pin
 } from "lucide-react"
 
 type UserProfile = {
@@ -44,6 +45,28 @@ type UserOrganization = {
   joined_at: string
 }
 
+type FeedPost = {
+  id: string
+  type: 'post' | 'repost' | 'tagged'
+  event_id: string
+  content: string
+  image_urls: string[]
+  likes: number
+  comments: number
+  reaction_count: number
+  created_at: string
+  pinned_to_profile: boolean
+  event: {
+    id: string
+    title: string
+  }
+  repost_comment?: string
+  reposted_by?: string
+  tagged_by?: string
+}
+
+const ITEMS_PER_PAGE = 5
+
 export default function UserProfilePage() {
   const params = useParams()
   const router = useRouter()
@@ -61,6 +84,13 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true)
   const [isCurrentUser, setIsCurrentUser] = useState(false)
 
+  // Feed filter state
+  const [activeFilter, setActiveFilter] = useState<'feed' | 'posts' | 'reposts' | 'tagged'>('feed')
+  const [feedItems, setFeedItems] = useState<FeedPost[]>([])
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const observerTarget = useRef<HTMLDivElement>(null)
+
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
@@ -69,6 +99,30 @@ export default function UserProfilePage() {
   useEffect(() => {
     loadProfileData()
   }, [userId])
+
+  useEffect(() => {
+    if (profile && !isCurrentUser) {
+      loadFeedItems(true)
+    }
+  }, [activeFilter, profile, isCurrentUser])
+
+  // Infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadFeedItems(false)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current)
+    }
+
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, feedItems])
 
   async function loadProfileData() {
     try {
@@ -179,6 +233,204 @@ export default function UserProfilePage() {
     }
   }
 
+  async function loadFeedItems(reset: boolean = false) {
+    if (!profile) return
+    
+    if (reset) {
+      setFeedItems([])
+      setHasMore(true)
+    }
+    
+    setLoadingMore(true)
+
+    try {
+      const offset = reset ? 0 : feedItems.length
+      let items: FeedPost[] = []
+
+      if (activeFilter === 'posts' || activeFilter === 'feed') {
+        // Load user's posts
+        const { data: postsData } = await supabase
+          .from('posts')
+          .select(`
+            id,
+            event_id,
+            content,
+            image_urls,
+            likes,
+            comments,
+            reaction_count,
+            created_at,
+            pinned_to_profile,
+            event:events (
+              id,
+              title
+            )
+          `)
+          .eq('author_id', profile.id)
+          .order('pinned_to_profile', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(offset, offset + ITEMS_PER_PAGE - 1)
+
+        if (postsData) {
+          items = [...items, ...postsData.map((p: any) => ({
+            ...p,
+            type: 'post' as const,
+            likes: p.likes || 0,
+            comments: p.comments || 0,
+            reaction_count: p.reaction_count || 0,
+            event: Array.isArray(p.event) ? p.event[0] : p.event
+          }))]
+        }
+      }
+
+      if (activeFilter === 'reposts' || activeFilter === 'feed') {
+        // Load user's reposts
+        const { data: repostsData } = await supabase
+          .from('reposts')
+          .select(`
+            id,
+            content_id,
+            content_type,
+            repost_comment,
+            created_at
+          `)
+          .eq('user_id', profile.id)
+          .eq('content_type', 'post')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + ITEMS_PER_PAGE - 1)
+
+        if (repostsData && repostsData.length > 0) {
+          const postIds = repostsData.map(r => r.content_id)
+          const { data: postsData } = await supabase
+            .from('posts')
+            .select(`
+              id,
+              event_id,
+              content,
+              image_urls,
+              likes,
+              comments,
+              reaction_count,
+              created_at,
+              event:events (
+                id,
+                title
+              )
+            `)
+            .in('id', postIds)
+
+          if (postsData) {
+            const repostItems = repostsData.map(repost => {
+              const post = postsData.find((p: any) => p.id === repost.content_id)
+              if (!post) return null
+              
+              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
+              
+              return {
+                id: post.id,
+                type: 'repost' as const,
+                event_id: post.event_id,
+                content: post.content,
+                image_urls: post.image_urls || [],
+                likes: post.likes || 0,
+                comments: post.comments || 0,
+                reaction_count: post.reaction_count || 0,
+                created_at: repost.created_at,
+                pinned_to_profile: false,
+                event: eventData || { id: post.event_id, title: 'Unknown Event' },
+                repost_comment: repost.repost_comment
+              }
+            }).filter(item => item !== null) as FeedPost[]
+            
+            items = [...items, ...repostItems]
+          }
+        }
+      }
+
+      if (activeFilter === 'tagged' || activeFilter === 'feed') {
+        // Load posts where user is tagged
+        const { data: tagsData } = await supabase
+          .from('tags')
+          .select(`
+            id,
+            content_id,
+            content_type,
+            tagged_by_user_id,
+            created_at
+          `)
+          .eq('tagged_user_id', profile.id)
+          .eq('content_type', 'post')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + ITEMS_PER_PAGE - 1)
+
+        if (tagsData && tagsData.length > 0) {
+          const postIds = tagsData.map(t => t.content_id)
+          const { data: postsData } = await supabase
+            .from('posts')
+            .select(`
+              id,
+              event_id,
+              content,
+              image_urls,
+              likes,
+              comments,
+              reaction_count,
+              created_at,
+              event:events (
+                id,
+                title
+              )
+            `)
+            .in('id', postIds)
+
+          if (postsData) {
+            const taggedItems = tagsData.map(tag => {
+              const post = postsData.find((p: any) => p.id === tag.content_id)
+              if (!post) return null
+              
+              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
+              
+              return {
+                id: post.id,
+                type: 'tagged' as const,
+                event_id: post.event_id,
+                content: post.content,
+                image_urls: post.image_urls || [],
+                likes: post.likes || 0,
+                comments: post.comments || 0,
+                reaction_count: post.reaction_count || 0,
+                created_at: tag.created_at,
+                pinned_to_profile: false,
+                event: eventData || { id: post.event_id, title: 'Unknown Event' }
+              }
+            }).filter(item => item !== null) as FeedPost[]
+            
+            items = [...items, ...taggedItems]
+          }
+        }
+      }
+
+      // Sort by created_at for feed
+      if (activeFilter === 'feed') {
+        items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      }
+
+      // Remove duplicates
+      const uniqueItems = items.filter((item, index, self) => 
+        index === self.findIndex(t => t.id === item.id && t.type === item.type)
+      )
+
+      const newItems = reset ? uniqueItems : [...feedItems, ...uniqueItems]
+      setFeedItems(newItems)
+      setHasMore(uniqueItems.length === ITEMS_PER_PAGE)
+
+    } catch (error) {
+      console.error('Error loading feed items:', error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   const getInitials = () => {
     if (!profile) return "U"
     const firstName = profile.first_name || ""
@@ -212,6 +464,16 @@ export default function UserProfilePage() {
     })
   }
 
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   const getRoleBadge = (role: string) => {
     switch(role) {
       case 'admin':
@@ -224,6 +486,17 @@ export default function UserProfilePage() {
         return <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-bold">{role}</span>
     }
   }
+
+  const handlePostClick = (eventId: string) => {
+    router.push(`/event/${eventId}`)
+  }
+
+  const feedFilters = [
+    { id: 'feed', label: 'Feed', icon: LayoutGrid },
+    { id: 'posts', label: 'Posts', icon: MessageSquare },
+    { id: 'reposts', label: 'Reposts', icon: Repeat2 },
+    { id: 'tagged', label: 'Tagged', icon: AtSign }
+  ]
 
   if (loading) {
     return (
@@ -257,7 +530,7 @@ export default function UserProfilePage() {
     <div className="max-w-4xl mx-auto px-4">
       {/* Header */}
       <div className="mb-8">
-        <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 mb-4">
+        <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 mb-4 hover:text-gray-900">
           <ArrowLeft className="h-5 w-5" /> Back
         </button>
         <h1 className="text-3xl font-black text-gray-900 mb-2">{getFullName()}'s Profile</h1>
@@ -282,26 +555,28 @@ export default function UserProfilePage() {
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-16 mb-6">
             <div className="flex items-end gap-4">
               {/* Avatar */}
-              {profile.avatar_url ? (
-                <img 
-                  src={profile.avatar_url} 
-                  alt={getFullName()}
-                  className="h-32 w-32 rounded-2xl border-4 border-white shadow-lg object-cover"
-                />
-              ) : (
-                <div className={`h-32 w-32 rounded-2xl border-4 border-white shadow-lg flex items-center justify-center text-white text-4xl font-black ${
-                  profile.role === 'admin' 
-                    ? 'bg-gradient-to-br from-purple-400 to-purple-600' 
-                    : 'bg-gradient-to-br from-blue-400 to-blue-600'
-                }`}>
-                  {getInitials()}
-                </div>
-              )}
-              {profile.role === 'admin' && (
-                <div className="absolute bottom-2 right-2 h-10 w-10 rounded-full bg-purple-500 border-4 border-white flex items-center justify-center shadow-md">
-                  <Shield className="h-5 w-5 text-white" />
-                </div>
-              )}
+              <div className="relative">
+                {profile.avatar_url ? (
+                  <img 
+                    src={profile.avatar_url} 
+                    alt={getFullName()}
+                    className="h-32 w-32 rounded-2xl border-4 border-white shadow-lg object-cover"
+                  />
+                ) : (
+                  <div className={`h-32 w-32 rounded-2xl border-4 border-white shadow-lg flex items-center justify-center text-white text-4xl font-black ${
+                    profile.role === 'admin' 
+                      ? 'bg-gradient-to-br from-purple-400 to-purple-600' 
+                      : 'bg-gradient-to-br from-blue-400 to-blue-600'
+                  }`}>
+                    {getInitials()}
+                  </div>
+                )}
+                {profile.role === 'admin' && (
+                  <div className="absolute -bottom-2 -right-2 h-10 w-10 rounded-full bg-purple-500 border-4 border-white flex items-center justify-center shadow-md">
+                    <Shield className="h-5 w-5 text-white" />
+                  </div>
+                )}
+              </div>
 
               {/* Name & Email */}
               <div className="mb-2">
@@ -416,6 +691,163 @@ export default function UserProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Feed Filters */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="h-5 w-5 text-gray-600" />
+            <h3 className="text-lg font-black text-gray-900">Activity</h3>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+          {feedFilters.map((filter) => {
+            const Icon = filter.icon
+            return (
+              <button
+                key={filter.id}
+                onClick={() => setActiveFilter(filter.id as any)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition-all ${
+                  activeFilter === filter.id
+                    ? 'bg-blue-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {filter.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Feed Items */}
+        <div className="space-y-3">
+          {feedItems.map((item) => (
+            <div 
+              key={`${item.type}-${item.id}`}
+              onClick={() => handlePostClick(item.event_id)}
+              className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer group"
+            >
+              {/* Type Badge */}
+              <div className="flex items-center gap-2 mb-2">
+                {item.type === 'repost' && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 font-bold">
+                    <Repeat2 className="h-3 w-3" />
+                    Reposted
+                  </span>
+                )}
+                {item.type === 'tagged' && (
+                  <span className="flex items-center gap-1 text-xs text-purple-600 font-bold">
+                    <AtSign className="h-3 w-3" />
+                    Tagged
+                  </span>
+                )}
+                {item.pinned_to_profile && (
+                  <span className="flex items-center gap-1 text-xs text-blue-600 font-bold">
+                    <Pin className="h-3 w-3 fill-current" />
+                    Pinned
+                  </span>
+                )}
+              </div>
+
+              {/* Repost Comment */}
+              {item.type === 'repost' && item.repost_comment && (
+                <div className="mb-2 p-2 bg-white rounded-lg border-l-4 border-green-500">
+                  <p className="text-sm text-gray-700 italic">{item.repost_comment}</p>
+                </div>
+              )}
+
+              <div className="flex items-start gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
+                    {item.event?.title || 'Event'}
+                  </p>
+                  <p className="text-sm text-gray-800 line-clamp-2 mb-2">{item.content}</p>
+                </div>
+              </div>
+
+              {/* Image Grid */}
+              {item.image_urls.length > 0 && (
+                <div className={`mb-3 ${
+                  item.image_urls.length === 1 ? 'grid grid-cols-1' :
+                  item.image_urls.length === 2 ? 'grid grid-cols-2 gap-2' :
+                  item.image_urls.length === 3 ? 'grid grid-cols-3 gap-2' :
+                  'grid grid-cols-2 gap-2'
+                }`}>
+                  {item.image_urls.slice(0, 4).map((url, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`relative overflow-hidden rounded-lg bg-gray-200 ${
+                        item.image_urls.length === 1 ? 'aspect-video col-span-1' :
+                        item.image_urls.length === 3 && idx === 0 ? 'aspect-video col-span-2' :
+                        'aspect-square'
+                      }`}
+                    >
+                      <img 
+                        src={url} 
+                        alt={`Post image ${idx + 1}`} 
+                        className="w-full h-full object-cover"
+                      />
+                      {idx === 3 && item.image_urls.length > 4 && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <span className="text-white text-xl font-bold">
+                            +{item.image_urls.length - 4}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {formatDateTime(item.created_at)}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Heart className="h-3 w-3" />
+                  {item.reaction_count || 0}
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <MessageSquare className="h-3 w-3" />
+                  {item.comments}
+                </span>
+                {item.image_urls.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <ImageIcon className="h-3 w-3" />
+                      {item.image_urls.length}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Loading More */}
+          {loadingMore && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+            </div>
+          )}
+
+          {/* Observer Target */}
+          <div ref={observerTarget} className="h-4" />
+
+          {/* No Items */}
+          {!loadingMore && feedItems.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <p className="font-medium">No {activeFilter} found</p>
+              <p className="text-sm">This user hasn't posted any content yet</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
