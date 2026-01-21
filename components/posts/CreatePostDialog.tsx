@@ -29,6 +29,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showIdentityDropdown, setShowIdentityDropdown] = useState(false)
   const [taggedUsers, setTaggedUsers] = useState<string[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   
@@ -49,6 +50,8 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         setLoading(true)
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
+
+        setCurrentUserId(user.id)
 
         const identities: PostingIdentity[] = []
 
@@ -378,6 +381,8 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           <TagUserSelector
             selectedUsers={taggedUsers}
             onUsersChange={setTaggedUsers}
+            authorId={currentUserId || undefined}
+            postedAsType={selectedIdentity?.type || 'user'}
           />
 
           {/* Image Previews */}

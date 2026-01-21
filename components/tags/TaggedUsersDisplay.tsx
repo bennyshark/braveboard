@@ -32,6 +32,8 @@ export function TaggedUsersDisplay({
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [showTooltip, setShowTooltip] = useState(false)
+  const [authorId, setAuthorId] = useState<string | null>(null)
+  const [postedAsType, setPostedAsType] = useState<'user' | 'organization' | 'faith_admin'>('user')
   const iconRef = useRef<HTMLDivElement>(null)
 
   const supabase = createBrowserClient(
@@ -49,6 +51,42 @@ export function TaggedUsersDisplay({
       
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
+
+      // Fetch content to get author_id and posted_as_type
+      if (contentType === 'post') {
+        const { data: postData } = await supabase
+          .from('posts')
+          .select('author_id, posted_as_type')
+          .eq('id', contentId)
+          .single()
+        
+        if (postData) {
+          setAuthorId(postData.author_id)
+          setPostedAsType(postData.posted_as_type || 'user')
+        }
+      } else if (contentType === 'bulletin') {
+        const { data: bulletinData } = await supabase
+          .from('bulletin_boards')
+          .select('author_id, posted_as_type')
+          .eq('id', contentId)
+          .single()
+        
+        if (bulletinData) {
+          setAuthorId(bulletinData.author_id)
+          setPostedAsType(bulletinData.posted_as_type || 'user')
+        }
+      } else if (contentType === 'announcement') {
+        const { data: announcementData } = await supabase
+          .from('announcements')
+          .select('author_id, posted_as_type')
+          .eq('id', contentId)
+          .single()
+        
+        if (announcementData) {
+          setAuthorId(announcementData.author_id)
+          setPostedAsType(announcementData.posted_as_type || 'user')
+        }
+      }
 
       const { data: tags } = await supabase
         .from('tags')
@@ -231,7 +269,7 @@ export function TaggedUsersDisplay({
             setIsEditMode(false)
           }}
         >
-          {/* Modal Container: Fixed height (85vh) and Max Width (3xl) */}
+          {/* Modal Container */}
           <div 
             className="bg-white rounded-2xl w-full max-w-3xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
@@ -324,6 +362,8 @@ export function TaggedUsersDisplay({
                    <TagUserSelector
                     selectedUsers={selectedUserIds}
                     onUsersChange={setSelectedUserIds}
+                    authorId={authorId || undefined}
+                    postedAsType={postedAsType}
                   />
                 </div>
               )}

@@ -7,6 +7,8 @@ import { createBrowserClient } from "@supabase/ssr"
 interface TagUserSelectorProps {
   selectedUsers: string[]
   onUsersChange: (userIds: string[]) => void
+  authorId?: string
+  postedAsType?: 'user' | 'organization' | 'faith_admin'
 }
 
 type User = {
@@ -18,12 +20,18 @@ type User = {
   isSelf?: boolean
 }
 
-export function TagUserSelector({ selectedUsers, onUsersChange }: TagUserSelectorProps) {
+export function TagUserSelector({ 
+  selectedUsers, 
+  onUsersChange,
+  authorId,
+  postedAsType
+}: TagUserSelectorProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [users, setUsers] = useState<User[]>([])
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,23 +44,34 @@ export function TagUserSelector({ selectedUsers, onUsersChange }: TagUserSelecto
 
   useEffect(() => {
     if (searchTerm.trim()) {
-      const filtered = users.filter(user => 
-        user.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !selectedUsers.includes(user.id)
-      )
-      setFilteredUsers(filtered.slice(0, 50)) // Increased limit to show more results
+      const filtered = users.filter(user => {
+        // Don't show already selected users
+        if (selectedUsers.includes(user.id)) return false
+        
+        // Don't show the author if they posted as themselves
+        if (authorId && postedAsType === 'user' && user.id === authorId) {
+          return false
+        }
+        
+        // Check name match
+        return user.name.toLowerCase().includes(searchTerm.toLowerCase())
+      })
+      
+      setFilteredUsers(filtered.slice(0, 50))
       setShowDropdown(true)
     } else {
       setFilteredUsers([])
       setShowDropdown(false)
     }
-  }, [searchTerm, users, selectedUsers])
+  }, [searchTerm, users, selectedUsers, authorId, postedAsType])
 
   const loadUsers = async () => {
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      
+      setCurrentUserId(user.id)
 
       const { data, error } = await supabase
         .from('profiles')
@@ -150,7 +169,7 @@ export function TagUserSelector({ selectedUsers, onUsersChange }: TagUserSelecto
           />
         </div>
 
-        {/* Dropdown Results - INCREASED SIZE */}
+        {/* Dropdown Results */}
         {showDropdown && (
           <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-[400px] overflow-y-auto z-50">
             {loading ? (

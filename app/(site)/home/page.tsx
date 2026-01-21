@@ -1,3 +1,4 @@
+// app/(site)/home/page.tsx
 "use client"
 
 import { useState, useEffect, Suspense } from "react" // Added Suspense import
