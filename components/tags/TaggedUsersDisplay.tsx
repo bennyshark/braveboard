@@ -1,3 +1,4 @@
+// components/tags/TaggedUsersDisplay.tsx
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -6,7 +7,8 @@ import { createBrowserClient } from "@supabase/ssr"
 import { TagUserSelector } from "./TagUserSelector"
 
 interface TaggedUsersDisplayProps {
-  contentType: 'post' | 'bulletin' | 'announcement'
+  // Added 'free_wall_post' to the allowed types
+  contentType: 'post' | 'bulletin' | 'announcement' | 'repost' | 'free_wall_post'
   contentId: string
   canEdit: boolean 
   onTagsUpdated?: () => void
@@ -85,6 +87,29 @@ export function TaggedUsersDisplay({
         if (announcementData) {
           setAuthorId(announcementData.author_id)
           setPostedAsType(announcementData.posted_as_type || 'user')
+        }
+      } else if (contentType === 'repost') {
+        const { data: repostData } = await supabase
+          .from('reposts')
+          .select('user_id')
+          .eq('id', contentId)
+          .single()
+        
+        if (repostData) {
+          setAuthorId(repostData.user_id)
+          setPostedAsType('user')
+        }
+      } else if (contentType === 'free_wall_post') {
+        // Handle free wall posts
+        const { data: fwData } = await supabase
+          .from('free_wall_posts')
+          .select('author_id')
+          .eq('id', contentId)
+          .single()
+        
+        if (fwData) {
+          setAuthorId(fwData.author_id)
+          setPostedAsType('user')
         }
       }
 

@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - UPDATED with TaggedUsersDisplay component
+// components/feed/PostCard.tsx - Complete with TaggedUsersDisplay
 "use client"
 
 import { useState, useEffect } from "react"

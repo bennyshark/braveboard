@@ -5,7 +5,7 @@ import { ThumbsUp } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface ReactionButtonProps {
-  contentType: 'post' | 'comment' | 'bulletin' | 'announcement'
+  contentType: 'post' | 'comment' | 'bulletin' | 'announcement' | 'free_wall_post' | 'repost'
   contentId: string
   onReactionChange?: () => void
 }
@@ -85,15 +85,12 @@ export function ReactionButton({ contentType, contentId, onReactionChange }: Rea
 
         if (error) throw error
         
-        // Update local state immediately
         setCurrentReaction(null)
-        
-        // Trigger parent refresh
         if (onReactionChange) {
           setTimeout(() => onReactionChange(), 100)
         }
       } else {
-        // Upsert the reaction (add or update)
+        // Upsert the reaction
         const { error } = await supabase
           .from('reactions')
           .upsert({
@@ -108,10 +105,7 @@ export function ReactionButton({ contentType, contentId, onReactionChange }: Rea
 
         if (error) throw error
         
-        // Update local state immediately
         setCurrentReaction(reactionType)
-        
-        // Trigger parent refresh
         if (onReactionChange) {
           setTimeout(() => onReactionChange(), 100)
         }
@@ -119,7 +113,6 @@ export function ReactionButton({ contentType, contentId, onReactionChange }: Rea
 
     } catch (error) {
       console.error('Error updating reaction:', error)
-      // Revert to previous state on error
       await loadUserReaction()
     } finally {
       setIsLoading(false)
@@ -150,17 +143,16 @@ export function ReactionButton({ contentType, contentId, onReactionChange }: Rea
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-<button
-  onClick={() => handleReaction(currentReaction || 'like')} 
-  
-  disabled={isLoading}
-  title={currentReactionData ? currentReactionData.label : 'Like'}
-  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-bold ${
-    currentReaction
-      ? 'bg-blue-100 text-blue-700'
-      : 'text-gray-700 hover:bg-gray-100'
-  } ${isLoading ? 'opacity-50 cursor-wait' : ''}`}
->
+      <button
+        onClick={() => handleReaction(currentReaction || 'like')} 
+        disabled={isLoading}
+        title={currentReactionData ? currentReactionData.label : 'Like'}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-bold ${
+          currentReaction
+            ? 'bg-blue-100 text-blue-700'
+            : 'text-gray-700 hover:bg-gray-100'
+        } ${isLoading ? 'opacity-50 cursor-wait' : ''}`}
+      >
         {currentReactionData ? (
           <span className="text-base">{currentReactionData.emoji}</span>
         ) : (

@@ -8,7 +8,7 @@ import { InlineCommentBox } from "./InlineCommentBox"
 import { AllCommentsModal } from "./AllCommentsModal"
 
 interface CommentSectionProps {
-  contentType: 'post' | 'announcement' | 'bulletin'
+  contentType: 'post' | 'announcement' | 'bulletin' | 'free_wall_post' | 'repost'
   contentId: string
   eventId?: string
   initialCount?: number

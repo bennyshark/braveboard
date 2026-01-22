@@ -1,18 +1,17 @@
 // components/reposts/RepostButton.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Repeat2, Loader2, X } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface RepostButtonProps {
-  contentType: 'post' | 'bulletin' | 'announcement'
+  contentType: 'post' | 'bulletin' | 'announcement' | 'free_wall_post' | 'repost'
   contentId: string
   onRepostChange?: () => void
 }
 
 export function RepostButton({ contentType, contentId, onRepostChange }: RepostButtonProps) {
-  const [hasReposted, setHasReposted] = useState(false)
   const [showDialog, setShowDialog] = useState(false)
   const [comment, setComment] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -22,36 +21,7 @@ export function RepostButton({ contentType, contentId, onRepostChange }: RepostB
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  useEffect(() => {
-    checkRepostStatus()
-  }, [contentType, contentId])
-
-  const checkRepostStatus = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data, error } = await supabase
-        .from('reposts')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('content_type', contentType)
-        .eq('content_id', contentId)
-        .maybeSingle()
-
-      if (error && error.code !== 'PGRST116') throw error
-      setHasReposted(!!data)
-    } catch (error) {
-      console.error('Error checking repost status:', error)
-    }
-  }
-
-  const handleRepost = async () => {
-    if (hasReposted) {
-      await handleUndoRepost()
-      return
-    }
-
+  const handleRepost = () => {
     setShowDialog(true)
   }
 
@@ -72,7 +42,6 @@ export function RepostButton({ contentType, contentId, onRepostChange }: RepostB
 
       if (error) throw error
 
-      setHasReposted(true)
       setShowDialog(false)
       setComment("")
       
@@ -87,53 +56,21 @@ export function RepostButton({ contentType, contentId, onRepostChange }: RepostB
     }
   }
 
-  const handleUndoRepost = async () => {
-    if (!confirm('Remove this repost from your profile?')) return
-
-    setIsLoading(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const { error } = await supabase
-        .from('reposts')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('content_type', contentType)
-        .eq('content_id', contentId)
-
-      if (error) throw error
-
-      setHasReposted(false)
-      
-      if (onRepostChange) {
-        setTimeout(() => onRepostChange(), 100)
-      }
-    } catch (error: any) {
-      console.error('Error deleting repost:', error)
-      alert(`Failed to remove repost: ${error.message}`)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   return (
     <>
       <button
         onClick={handleRepost}
         disabled={isLoading}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-bold ${
-          hasReposted
-            ? 'bg-green-100 text-green-700'
-            : 'text-gray-700 hover:bg-green-50 hover:text-green-600'
-        } ${isLoading ? 'opacity-50 cursor-wait' : ''}`}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-xs font-bold text-gray-700 hover:bg-green-50 hover:text-green-600 ${
+          isLoading ? 'opacity-50 cursor-wait' : ''
+        }`}
       >
         {isLoading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
           <Repeat2 className="h-3.5 w-3.5" />
         )}
-        {hasReposted ? 'Reposted' : 'Repost'}
+        Repost
       </button>
 
       {/* Repost Dialog */}

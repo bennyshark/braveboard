@@ -1,6 +1,6 @@
 // components/comments/AllCommentsModal.tsx
 "use client"
-import { X, MessageCircle } from "lucide-react"
+import { X } from "lucide-react"
 import { CommentItem } from "./CommentItem"
 
 type Comment = {
@@ -8,7 +8,9 @@ type Comment = {
   content: string
   imageUrl: string | null
   likes: number
+  reactionCount?: number
   createdAt: string
+  createdAtTimestamp: number
   authorId: string
   authorName: string
   authorAvatar: string | null
@@ -18,6 +20,7 @@ type Comment = {
   replies: Comment[]
   replyingToName?: string | null
   isDeleted?: boolean
+  mostRecentReplyTimestamp?: number
 }
 
 interface AllCommentsModalProps {
@@ -25,16 +28,16 @@ interface AllCommentsModalProps {
   onClose: () => void
   comments: Comment[]
   totalCount: number
-  contentType: 'post' | 'announcement' | 'bulletin'
+  contentType: 'post' | 'announcement' | 'bulletin' | 'free_wall_post' | 'repost'
   contentId: string
   eventId?: string
   onCommentCreated: () => void
 }
 
-export function AllCommentsModal({ 
-  isOpen, 
-  onClose, 
-  comments, 
+export function AllCommentsModal({
+  isOpen,
+  onClose,
+  comments,
   totalCount,
   contentType,
   contentId,
@@ -43,60 +46,50 @@ export function AllCommentsModal({
 }: AllCommentsModalProps) {
   if (!isOpen) return null
 
+  // Sort comments by most recent activity
+  const sortedComments = [...comments].sort((a, b) => {
+    const aTime = a.mostRecentReplyTimestamp || a.createdAtTimestamp
+    const bTime = b.mostRecentReplyTimestamp || b.createdAtTimestamp
+    return bTime - aTime
+  })
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 all-comments-modal">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl">
-        
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <MessageCircle className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-xl font-black text-gray-900">All Comments</h3>
-              <p className="text-sm text-gray-500">{totalCount} total comments</p>
-            </div>
+    <div 
+      className="all-comments-modal fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
+          <div>
+            <h3 className="text-2xl font-black text-gray-900">All Comments</h3>
+            <p className="text-sm text-gray-600 mt-1">{totalCount} total comments</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-white/80 rounded-lg transition-colors"
           >
             <X className="h-6 w-6 text-gray-500" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          {comments.length > 0 ? (
-            <div className="space-y-4">
-              {comments.map(comment => (
-                <div key={comment.id} className="animate-in fade-in duration-300">
-                  <CommentItem 
-                    comment={comment}
-                    contentType={contentType}
-                    contentId={contentId}
-                    eventId={eventId}
-                    onCommentCreated={onCommentCreated}
-                    depth={0}
-                    isInsideModal={true}
-                  />
-                </div>
-              ))}
+        {/* Comments List */}
+        <div className="overflow-y-auto max-h-[calc(85vh-120px)] p-6 space-y-4">
+          {sortedComments.map(comment => (
+            <div key={comment.id} className="animate-in fade-in duration-300">
+              <CommentItem 
+                comment={comment}
+                contentType={contentType}
+                contentId={contentId}
+                eventId={eventId}
+                onCommentCreated={onCommentCreated}
+                isInsideModal={true}
+              />
             </div>
-          ) : (
-            <div className="text-center py-12 text-gray-500">
-              <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p>No comments yet</p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end p-4 border-t border-gray-200 flex-shrink-0">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors"
-          >
-            Close
-          </button>
+          ))}
         </div>
       </div>
     </div>

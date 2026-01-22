@@ -1,4 +1,4 @@
-// components/comments/CommentItem.tsx - UPDATED with Reactions
+// components/comments/CommentItem.tsx
 "use client"
 import { useState } from "react"
 import { 
@@ -36,7 +36,7 @@ type Comment = {
 
 interface CommentItemProps {
   comment: Comment
-  contentType: 'post' | 'announcement' | 'bulletin'
+  contentType: 'post' | 'announcement' | 'bulletin' | 'free_wall_post' | 'repost'
   contentId: string
   eventId?: string
   onCommentCreated: () => void
@@ -118,7 +118,6 @@ export function CommentItem({
   }
 
   const handleReactionChange = () => {
-    // Reload the comment data to update reaction count
     onCommentCreated()
     setRefreshTrigger(prev => prev + 1)
   }
@@ -284,7 +283,6 @@ export function CommentItem({
                   )}
                 </div>
 
-                {/* Reaction Summary on the right */}
                 <ReactionSummary 
                   contentType="comment"
                   contentId={comment.id}

@@ -1,8 +1,8 @@
-// app/(site)/home/page.tsx
+// app/(site)/home/page.tsx - UPDATED with scroll to content functionality
 "use client"
 
-import { useState, useEffect, Suspense } from "react" // Added Suspense import
-import { Newspaper, Calendar, Megaphone, Loader2, AlertCircle } from "lucide-react"
+import { useState, useEffect, Suspense, useRef } from "react"
+import { Newspaper, Calendar, Megaphone, MessageSquare, Loader2, AlertCircle } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Organization, EventItem } from "@/app/(site)/home/types"
 import { EventCard } from "@/components/feed/EventCard"
@@ -10,9 +10,11 @@ import { CreateButton } from "@/components/home/CreateButton"
 import { FeedFilters } from "@/components/home/FeedFilters"
 import { AnnouncementCard } from "@/components/feed/AnnouncementCard"
 import { BulletinCard } from "@/components/feed/BulletinCard"
+import { FreeWallCard } from "@/components/feed/FreeWallCard"
+import { RepostCard } from "@/components/feed/RepostCard"
+import { CreateFreeWallPostDialog } from "@/components/posts/CreateFreeWallPostDialog"
 import { useSearchParams } from "next/navigation"
 
-// --- TYPES ---
 type Announcement = {
   id: string
   header: string
@@ -41,7 +43,31 @@ type Bulletin = {
   createdAt: string
 }
 
-// --- LOADING FALLBACK COMPONENT ---
+type FreeWallPost = {
+  id: string
+  content: string
+  authorId: string
+  authorName: string
+  authorAvatar: string | null
+  imageUrls: string[]
+  reactionCount: number
+  comments: number
+  repostCount: number
+  createdAt: string
+  editedAt: string | null
+}
+
+type Repost = {
+  id: string
+  userId: string
+  userName: string
+  userAvatar: string | null
+  contentType: 'post' | 'bulletin' | 'announcement' | 'free_wall_post' | 'repost'
+  contentId: string
+  repostComment: string | null
+  createdAt: string
+}
+
 function HomeLoading() {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-gray-500">
@@ -51,7 +77,6 @@ function HomeLoading() {
   )
 }
 
-// --- MAIN CONTENT COMPONENT (Inner) ---
 function HomeContent() {
   const searchParams = useSearchParams()
   const supabase = createBrowserClient(
@@ -59,7 +84,7 @@ function HomeContent() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  const [activeFeedFilter, setActiveFeedFilter] = useState("bulletin")
+  const [activeFeedFilter, setActiveFeedFilter] = useState("free_wall")
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedAnnouncementSource, setSelectedAnnouncementSource] = useState<string | null>("all")
   const [hiddenEvents, setHiddenEvents] = useState<Set<string>>(new Set())
@@ -68,10 +93,25 @@ function HomeContent() {
   const [events, setEvents] = useState<EventItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [bulletins, setBulletins] = useState<Bulletin[]>([])
+  const [freeWallPosts, setFreeWallPosts] = useState<FreeWallPost[]>([])
+  const [reposts, setReposts] = useState<Repost[]>([])
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
   const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const [pendingScrollTo, setPendingScrollTo] = useState<{tab: string, id: string} | null>(null)
+
+  const contentRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  
+  // Function to handle navigation to content
+  const handleNavigateToContent = (tab: string, contentId: string) => {
+    // Switch tab
+    setActiveFeedFilter(tab)
+    // Set pending scroll
+    setPendingScrollTo({ tab, id: contentId })
+  }
 
   const loadEvents = async () => {
     try {
@@ -315,6 +355,97 @@ function HomeContent() {
     }
   }
 
+  const loadFreeWall = async () => {
+    try {
+      const [postsRes, repostsRes] = await Promise.all([
+        supabase
+          .from('free_wall_posts')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('reposts')
+          .select('*')
+          .in('content_type', ['post', 'bulletin', 'announcement', 'free_wall_post', 'repost'])
+          .order('created_at', { ascending: false })
+      ])
+
+      if (postsRes.error) throw postsRes.error
+      if (repostsRes.error) throw repostsRes.error
+
+      const authorIds = [...new Set(postsRes.data.map((p: any) => p.author_id))]
+      const { data: authorsData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar_url')
+        .in('id', authorIds)
+
+      const authorMap = new Map(
+        authorsData?.map(author => [
+          author.id,
+          {
+            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
+            avatarUrl: author.avatar_url
+          }
+        ]) || []
+      )
+
+      const mappedPosts: FreeWallPost[] = postsRes.data.map((p: any) => {
+        const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
+        return {
+          id: p.id,
+          content: p.content,
+          authorId: p.author_id,
+          authorName: authorData.name,
+          authorAvatar: authorData.avatarUrl,
+          imageUrls: p.image_urls || [],
+          reactionCount: p.reaction_count || 0,
+          comments: p.comments || 0,
+          repostCount: p.repost_count || 0,
+          createdAt: new Date(p.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          }),
+          editedAt: p.edited_at
+        }
+      })
+
+      const reposterIds = [...new Set(repostsRes.data.map((r: any) => r.user_id))]
+      const { data: repostersData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar_url')
+        .in('id', reposterIds)
+
+      const reposterMap = new Map(
+        repostersData?.map(user => [
+          user.id,
+          {
+            name: `${user.first_name || 'Unknown'} ${user.last_name || 'User'}`,
+            avatarUrl: user.avatar_url
+          }
+        ]) || []
+      )
+
+      const mappedReposts: Repost[] = repostsRes.data.map((r: any) => {
+        const reposterData = reposterMap.get(r.user_id) || { name: 'Unknown User', avatarUrl: null }
+        return {
+          id: r.id,
+          userId: r.user_id,
+          userName: reposterData.name,
+          userAvatar: reposterData.avatarUrl,
+          contentType: r.content_type,
+          contentId: r.content_id,
+          repostComment: r.repost_comment,
+          createdAt: new Date(r.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      })
+
+      setFreeWallPosts(mappedPosts)
+      setReposts(mappedReposts)
+    } catch (err) {
+      console.error("Error loading free wall:", err)
+    }
+  }
+
   useEffect(() => {
     async function loadData() {
       setIsLoading(true)
@@ -365,7 +496,7 @@ function HomeContent() {
         ]
         setAllOrganizations(fetchedOrgs)
 
-        await Promise.all([loadEvents(), loadAnnouncements(), loadBulletins()])
+        await Promise.all([loadEvents(), loadAnnouncements(), loadBulletins(), loadFreeWall()])
 
       } catch (err) {
         console.error("Error loading home data:", err)
@@ -379,12 +510,64 @@ function HomeContent() {
 
   useEffect(() => {
     const tab = searchParams.get('tab')
-    if (tab && ['bulletin', 'events', 'announcements'].includes(tab)) {
+    const scrollTo = searchParams.get('scrollTo')
+    
+    if (tab && ['free_wall', 'bulletin', 'events', 'announcements'].includes(tab)) {
       setActiveFeedFilter(tab)
     }
-  }, [searchParams])
+
+    // Scroll to content after data loads
+    if (scrollTo && !isLoading) {
+      setTimeout(() => {
+        const element = contentRefs.current.get(scrollTo)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          setHighlightedId(scrollTo)
+          
+          // Remove highlight after 3 seconds
+          setTimeout(() => {
+            setHighlightedId(null)
+          }, 3000)
+        }
+      }, 500)
+    }
+  }, [searchParams, isLoading])
+
+  // Handle pending scroll after tab change
+  useEffect(() => {
+    if (pendingScrollTo && !isLoading) {
+      setTimeout(() => {
+        const element = contentRefs.current.get(pendingScrollTo.id)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          setHighlightedId(pendingScrollTo.id)
+          setPendingScrollTo(null)
+          
+          // Remove highlight after 3 seconds
+          setTimeout(() => {
+            setHighlightedId(null)
+          }, 3000)
+        } else {
+          // If element not found, try again after a short delay
+          setTimeout(() => {
+            const retryElement = contentRefs.current.get(pendingScrollTo.id)
+            if (retryElement) {
+              retryElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              setHighlightedId(pendingScrollTo.id)
+              setPendingScrollTo(null)
+              
+              setTimeout(() => {
+                setHighlightedId(null)
+              }, 3000)
+            }
+          }, 300)
+        }
+      }, 100)
+    }
+  }, [pendingScrollTo, isLoading, activeFeedFilter])
 
   const feedFilters = [
+    { id: "free_wall", label: "Free Wall", icon: MessageSquare, color: "gray" },
     { id: "bulletin", label: "Bulletin", icon: Newspaper, color: "blue" },
     { id: "events", label: "Events", icon: Calendar, color: "orange" },
     { id: "announcements", label: "Announcements", icon: Megaphone, color: "purple" },
@@ -427,26 +610,20 @@ function HomeContent() {
   })
 
   const filteredAnnouncements = announcements.filter(announcement => {
-    if (activeFeedFilter === "events" || activeFeedFilter === "bulletin") {
-      return false
-    }
+    if (activeFeedFilter !== "announcements") return false
 
-    if (activeFeedFilter === "announcements") {
-      if (!selectedAnnouncementSource || selectedAnnouncementSource === "all") {
-        return true
-      }
-      
-      const sourceMap: Record<string, string> = {
-        "faith": "FAITH Administration",
-        "sc": "Student Council",
-        "lighthouse": "Lighthouse"
-      }
-      
-      const targetName = sourceMap[selectedAnnouncementSource]
-      return announcement.organizerName === targetName
+    if (!selectedAnnouncementSource || selectedAnnouncementSource === "all") {
+      return true
     }
-
-    return false
+    
+    const sourceMap: Record<string, string> = {
+      "faith": "FAITH Administration",
+      "sc": "Student Council",
+      "lighthouse": "Lighthouse"
+    }
+    
+    const targetName = sourceMap[selectedAnnouncementSource]
+    return announcement.organizerName === targetName
   })
 
   const filteredBulletins = bulletins.filter(bulletin => {
@@ -469,6 +646,12 @@ function HomeContent() {
     return true
   })
 
+  const freeWallContent = activeFeedFilter === "free_wall" ? 
+    [...freeWallPosts.map(p => ({ type: 'post' as const, data: p, timestamp: new Date(p.createdAt).getTime() })),
+     ...reposts.map(r => ({ type: 'repost' as const, data: r, timestamp: new Date(r.createdAt).getTime() }))]
+      .sort((a, b) => b.timestamp - a.timestamp)
+    : []
+
   return (
     <div className="max-w-5xl mx-auto pb-10 px-4">
       <div className="mb-6">
@@ -476,8 +659,8 @@ function HomeContent() {
           <div>
             <h1 className="text-3xl font-black text-gray-900 mb-1">Braveboard</h1>
             <p className="text-gray-600 text-sm">
-              {activeFeedFilter === "bulletin" && !selectedOrg && "Community updates and posts"}
-              {activeFeedFilter === "bulletin" && selectedOrg && "Organization bulletins and updates"}
+              {activeFeedFilter === "free_wall" && "Share your thoughts, discover more"}
+              {activeFeedFilter === "bulletin" && "Community updates and posts"}
               {activeFeedFilter === "events" && "Organization events and activities"}
               {activeFeedFilter === "announcements" && "Official campus announcements"}
             </p>
@@ -495,7 +678,12 @@ function HomeContent() {
                   onClick={() => setActiveFeedFilter(filter.id)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition-all duration-200 ${
                     isActive
-                      ? `bg-gradient-to-r ${filter.color === "blue" ? "from-blue-500 to-blue-600" : filter.color === "orange" ? "from-orange-500 to-orange-600" : "from-purple-500 to-purple-600"} text-white shadow-md`
+                      ? `bg-gradient-to-r ${
+                          filter.color === "gray" ? "from-gray-500 to-gray-600" :
+                          filter.color === "blue" ? "from-blue-500 to-blue-600" : 
+                          filter.color === "orange" ? "from-orange-500 to-orange-600" : 
+                          "from-purple-500 to-purple-600"
+                        } text-white shadow-md`
                       : "bg-white border border-gray-300 text-gray-600 hover:border-gray-400"
                   }`}
                 >
@@ -506,11 +694,21 @@ function HomeContent() {
             })}
           </div>
           
-          <CreateButton 
-            activeFeedFilter={activeFeedFilter}
-            isFaithAdmin={isFaithAdmin}
-            userCreateOrgs={userCreateOrgs}
-          />
+          {activeFeedFilter === "free_wall" ? (
+            <button
+              onClick={() => setShowCreateDialog(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-lg font-bold text-sm whitespace-nowrap shadow-md hover:shadow-lg transition-all"
+            >
+              <MessageSquare className="h-4 w-4" />
+              Create Post
+            </button>
+          ) : (
+            <CreateButton 
+              activeFeedFilter={activeFeedFilter}
+              isFaithAdmin={isFaithAdmin}
+              userCreateOrgs={userCreateOrgs}
+            />
+          )}
         </div>
       </div>
 
@@ -530,45 +728,118 @@ function HomeContent() {
           <HomeLoading />
         ) : (
           <>
+            {activeFeedFilter === "free_wall" && 
+              freeWallContent.map((item, idx) => (
+                <div 
+                  key={item.type === 'post' ? `post-${item.data.id}` : `repost-${item.data.id}`}
+                  ref={(el) => {
+                    if (el) {
+                      contentRefs.current.set(item.data.id, el)
+                    }
+                  }}
+                  className={`transition-all duration-500 ${
+                    highlightedId === item.data.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                  }`}
+                >
+                  {item.type === 'post' ? (
+                    <FreeWallCard post={item.data} onUpdate={loadFreeWall} />
+                  ) : (
+                    <RepostCard 
+                      repost={item.data} 
+                      onUpdate={loadFreeWall} 
+                      onNavigateToContent={handleNavigateToContent}
+                    />
+                  )}
+                </div>
+              ))
+            }
+            
             {activeFeedFilter === "bulletin" && 
               filteredBulletins.map(bulletin => (
-                <BulletinCard key={bulletin.id} bulletin={bulletin} onUpdate={loadBulletins} />
+                <div
+                  key={bulletin.id}
+                  ref={(el) => {
+                    if (el) {
+                      contentRefs.current.set(bulletin.id, el)
+                    }
+                  }}
+                  className={`transition-all duration-500 ${
+                    highlightedId === bulletin.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                  }`}
+                >
+                  <BulletinCard bulletin={bulletin} onUpdate={loadBulletins} />
+                </div>
               ))
             }
             
             {activeFeedFilter === "announcements" && 
               filteredAnnouncements.map(announcement => (
-                <AnnouncementCard key={announcement.id} announcement={announcement} onUpdate={loadAnnouncements} />
+                <div
+                  key={announcement.id}
+                  ref={(el) => {
+                    if (el) {
+                      contentRefs.current.set(announcement.id, el)
+                    }
+                  }}
+                  className={`transition-all duration-500 ${
+                    highlightedId === announcement.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                  }`}
+                >
+                  <AnnouncementCard announcement={announcement} onUpdate={loadAnnouncements} />
+                </div>
               ))
             }
             
             {activeFeedFilter === "events" && 
               filteredEvents.map(event => (
-                <EventCard 
+                <div
                   key={event.id}
-                  event={event}
-                  isPostsHidden={hiddenEvents.has(event.id)}
-                  onToggleHide={(e) => toggleHideEvent(event.id, e)}
-                  onPostCreated={loadEvents}
-                  onEventDeleted={() => handleEventDeleted(event.id)}
-                />
+                  ref={(el) => {
+                    if (el) {
+                      contentRefs.current.set(event.id, el)
+                      // Also add refs for posts within the event
+                      event.posts.forEach(post => {
+                        contentRefs.current.set(post.id, el)
+                      })
+                    }
+                  }}
+                  className={`transition-all duration-500 ${
+                    highlightedId === event.id || event.posts.some(p => p.id === highlightedId) ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                  }`}
+                >
+                  <EventCard 
+                    event={event}
+                    isPostsHidden={hiddenEvents.has(event.id)}
+                    onToggleHide={(e) => toggleHideEvent(event.id, e)}
+                    onPostCreated={loadEvents}
+                    onEventDeleted={() => handleEventDeleted(event.id)}
+                  />
+                </div>
               ))
             }
 
-            {filteredEvents.length === 0 && filteredAnnouncements.length === 0 && filteredBulletins.length === 0 && (
+            {((activeFeedFilter === "free_wall" && freeWallContent.length === 0) ||
+              (activeFeedFilter === "events" && filteredEvents.length === 0) ||
+              (activeFeedFilter === "announcements" && filteredAnnouncements.length === 0) ||
+              (activeFeedFilter === "bulletin" && filteredBulletins.length === 0)) && (
               <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                 <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
-                <p className="text-gray-500 font-medium">No content found matching your criteria.</p>
+                <p className="text-gray-500 font-medium">No content found.</p>
               </div>
             )}
           </>
         )}
       </div>
+
+      <CreateFreeWallPostDialog
+        isOpen={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+        onPostCreated={loadFreeWall}
+      />
     </div>
   )
 }
 
-// --- EXPORTED DEFAULT COMPONENT ---
 export default function HomePage() {
   return (
     <Suspense fallback={<HomeLoading />}>

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 
 interface ReactionSummaryProps {
-  contentType: 'post' | 'comment' | 'bulletin' | 'announcement'
+  contentType: 'post' | 'comment' | 'bulletin' | 'announcement' | 'free_wall_post' | 'repost'
   contentId: string
   totalCount?: number
   refreshTrigger?: number
