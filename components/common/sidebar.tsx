@@ -33,7 +33,7 @@ export default function Sidebar() {
     { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
     { id: "research", label: "Research", icon: FileText, path: "/research" },
     { id: "departments", label: "Departments", icon: Briefcase, path: "/departments" },
-    { id: "organizations", label: "Organizations", icon: Users, path: "/organizations" },
+    { id: "organizations", label: "Organizations", icon: Users, path: "/organization" },
   ]
 
   const adminMenuItems = [
