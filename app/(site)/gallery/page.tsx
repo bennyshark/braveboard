@@ -70,22 +70,21 @@ export default function GalleryPage() {
       const albumsData: EventAlbum[] = []
       
       events?.forEach((event: any) => {
-        // Count total images from all posts
-        let imageCount = 0
-        let thumbnailUrl: string | null = null
+        // Collect all images from all posts
+        const allImages: string[] = []
 
         event.posts.forEach((post: any) => {
           if (post.image_urls && post.image_urls.length > 0) {
-            imageCount += post.image_urls.length
-            // Use first image as thumbnail if not set
-            if (!thumbnailUrl) {
-              thumbnailUrl = post.image_urls[0]
-            }
+            allImages.push(...post.image_urls)
           }
         })
 
         // Only include events with images
-        if (imageCount > 0) {
+        if (allImages.length > 0) {
+          // Pick a random image as thumbnail
+          const randomIndex = Math.floor(Math.random() * allImages.length)
+          const thumbnailUrl = allImages[randomIndex]
+
           albumsData.push({
             id: event.id,
             title: event.title,
@@ -100,7 +99,7 @@ export default function GalleryPage() {
               year: 'numeric'
             }),
             location: event.location,
-            imageCount,
+            imageCount: allImages.length,
             thumbnailUrl
           })
         }
