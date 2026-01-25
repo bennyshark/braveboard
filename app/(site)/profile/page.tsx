@@ -74,6 +74,7 @@ type FeedPost = {
   reaction_count: number
   created_at: string
   pinned_to_profile: boolean
+  pinned_at: string | null
   event: {
     id: string
     title: string
@@ -81,6 +82,8 @@ type FeedPost = {
   repost_comment?: string
   reposted_by?: string
   tagged_by?: string
+  repost_id?: string
+  tag_id?: string
 }
 
 type DragType = 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | null
@@ -270,13 +273,13 @@ export default function ProfilePage() {
             reaction_count,
             created_at,
             pinned_to_profile,
+            pinned_at,
             event:events (
               id,
               title
             )
           `)
           .eq('author_id', profile.id)
-          .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
           .range(offset, offset + ITEMS_PER_PAGE - 1)
 
@@ -286,7 +289,8 @@ export default function ProfilePage() {
             type: 'post' as const,
             likes: p.likes || 0,
             comments: p.comments || 0,
-            reaction_count: p.reaction_count || 0
+            reaction_count: p.reaction_count || 0,
+            pinned_at: p.pinned_at || null
           }))]
         }
       }
@@ -300,7 +304,9 @@ export default function ProfilePage() {
             content_id,
             content_type,
             repost_comment,
-            created_at
+            created_at,
+            pinned_to_profile,
+            pinned_at
           `)
           .eq('user_id', profile.id)
           .eq('content_type', 'post')
@@ -336,6 +342,7 @@ export default function ProfilePage() {
               
               return {
                 id: post.id,
+                repost_id: repost.id,
                 type: 'repost' as const,
                 event_id: post.event_id,
                 content: post.content,
@@ -344,7 +351,8 @@ export default function ProfilePage() {
                 comments: post.comments || 0,
                 reaction_count: post.reaction_count || 0,
                 created_at: repost.created_at,
-                pinned_to_profile: false,
+                pinned_to_profile: repost.pinned_to_profile || false,
+                pinned_at: repost.pinned_at || null,
                 event: eventData || { id: post.event_id, title: 'Unknown Event' },
                 repost_comment: repost.repost_comment
               }
@@ -364,7 +372,9 @@ export default function ProfilePage() {
             content_id,
             content_type,
             tagged_by_user_id,
-            created_at
+            created_at,
+            pinned_to_profile,
+            pinned_at
           `)
           .eq('tagged_user_id', profile.id)
           .eq('content_type', 'post')
@@ -400,6 +410,7 @@ export default function ProfilePage() {
               
               return {
                 id: post.id,
+                tag_id: tag.id,
                 type: 'tagged' as const,
                 event_id: post.event_id,
                 content: post.content,
@@ -408,7 +419,8 @@ export default function ProfilePage() {
                 comments: post.comments || 0,
                 reaction_count: post.reaction_count || 0,
                 created_at: tag.created_at,
-                pinned_to_profile: false,
+                pinned_to_profile: tag.pinned_to_profile || false,
+                pinned_at: tag.pinned_at || null,
                 event: eventData || { id: post.event_id, title: 'Unknown Event' }
               }
             }).filter(item => item !== null) as FeedPost[]
@@ -418,9 +430,25 @@ export default function ProfilePage() {
         }
       }
 
-      // Sort by created_at for feed
+      // Sort by pinned_at first (most recently pinned), then created_at for feed
       if (activeFilter === 'feed') {
-        items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        items.sort((a, b) => {
+          // Both pinned: sort by pinned_at (most recent pin first)
+          if (a.pinned_to_profile && b.pinned_to_profile) {
+            const aPinnedAt = a.pinned_at ? new Date(a.pinned_at).getTime() : 0
+            const bPinnedAt = b.pinned_at ? new Date(b.pinned_at).getTime() : 0
+            return bPinnedAt - aPinnedAt
+          }
+          
+          // Only a is pinned
+          if (a.pinned_to_profile && !b.pinned_to_profile) return -1
+          
+          // Only b is pinned
+          if (!a.pinned_to_profile && b.pinned_to_profile) return 1
+          
+          // Neither pinned: sort by created_at
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
       }
 
       // Remove duplicates
@@ -439,28 +467,70 @@ export default function ProfilePage() {
     }
   }
 
-  async function togglePinPost(postId: string, currentlyPinned: boolean) {
+  async function togglePinPost(item: FeedPost, currentlyPinned: boolean) {
     if (!profile) return
 
     try {
-      // Check how many posts are already pinned
-      const { count } = await supabase
+      // Check how many items are already pinned
+      const { count: postsCount } = await supabase
         .from('posts')
         .select('*', { count: 'exact', head: true })
         .eq('author_id', profile.id)
         .eq('pinned_to_profile', true)
 
-      if (!currentlyPinned && (count || 0) >= 3) {
-        alert('You can only pin up to 3 posts to your profile')
+      const { count: repostsCount } = await supabase
+        .from('reposts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .eq('pinned_to_profile', true)
+
+      const { count: tagsCount } = await supabase
+        .from('tags')
+        .select('*', { count: 'exact', head: true })
+        .eq('tagged_user_id', profile.id)
+        .eq('pinned_to_profile', true)
+
+      const totalPinned = (postsCount || 0) + (repostsCount || 0) + (tagsCount || 0)
+
+      if (!currentlyPinned && totalPinned >= 3) {
+        alert('You can only pin up to 3 items to your profile')
         return
       }
 
-      const { error } = await supabase
-        .from('posts')
-        .update({ pinned_to_profile: !currentlyPinned })
-        .eq('id', postId)
+      const now = new Date().toISOString()
 
-      if (error) throw error
+      // Update the appropriate table based on item type
+      if (item.type === 'post') {
+        const { error } = await supabase
+          .from('posts')
+          .update({ 
+            pinned_to_profile: !currentlyPinned,
+            pinned_at: !currentlyPinned ? now : null
+          })
+          .eq('id', item.id)
+
+        if (error) throw error
+      } else if (item.type === 'repost' && item.repost_id) {
+        const { error } = await supabase
+          .from('reposts')
+          .update({ 
+            pinned_to_profile: !currentlyPinned,
+            pinned_at: !currentlyPinned ? now : null
+          })
+          .eq('id', item.repost_id)
+
+        if (error) throw error
+      } else if (item.type === 'tagged' && item.tag_id) {
+        const { error } = await supabase
+          .from('tags')
+          .update({ 
+            pinned_to_profile: !currentlyPinned,
+            pinned_at: !currentlyPinned ? now : null
+          })
+          .eq('id', item.tag_id)
+
+        if (error) throw error
+      }
 
       // Reload feed items
       loadFeedItems(true)
@@ -1278,12 +1348,12 @@ export default function ProfilePage() {
               onClick={() => handlePostClick(item.event_id)}
               className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer group relative"
             >
-              {/* Pin Button for Posts */}
-              {item.type === 'post' && (
+              {/* Pin Button - Only visible in Feed filter */}
+              {activeFilter === 'feed' && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    togglePinPost(item.id, item.pinned_to_profile)
+                    togglePinPost(item, item.pinned_to_profile)
                   }}
                   className={`absolute top-3 right-3 p-2 rounded-lg transition-all ${
                     item.pinned_to_profile
@@ -1314,7 +1384,7 @@ export default function ProfilePage() {
                     Tagged
                   </span>
                 )}
-                {item.pinned_to_profile && (
+                {item.pinned_to_profile && activeFilter === 'feed' && (
                   <span className="flex items-center gap-1 text-xs text-blue-600 font-bold">
                     <Pin className="h-3 w-3 fill-current" />
                     Pinned
