@@ -11,7 +11,10 @@ import {
   Loader2,
   ImageOff,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Search,
+  Filter,
+  Users
 } from "lucide-react"
 
 type EventAlbum = {
@@ -22,6 +25,14 @@ type EventAlbum = {
   location: string | null
   imageCount: number
   thumbnailUrl: string | null
+  creatorOrgId: string | null
+  creatorOrgName: string | null
+}
+
+type Organization = {
+  id: string
+  name: string
+  eventCount: number
 }
 
 type EventImage = {
@@ -37,6 +48,9 @@ export default function GalleryPage() {
   const [albumImages, setAlbumImages] = useState<EventImage[]>([])
   const [loadingImages, setLoadingImages] = useState(false)
   const [previewImage, setPreviewImage] = useState<number | null>(null)
+  const [organizations, setOrganizations] = useState<Organization[]>([])
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,6 +74,8 @@ export default function GalleryPage() {
           start_date,
           end_date,
           location,
+          creator_org_id,
+          creator_organization:organizations(id, name),
           posts!inner(id, image_urls, created_at)
         `)
         .order('start_date', { ascending: false })
@@ -68,6 +84,7 @@ export default function GalleryPage() {
 
       // Process events to create albums
       const albumsData: EventAlbum[] = []
+      const orgMap = new Map<string, { name: string, count: number }>()
       
       events?.forEach((event: any) => {
         // Collect all images from all posts
@@ -85,6 +102,9 @@ export default function GalleryPage() {
           const randomIndex = Math.floor(Math.random() * allImages.length)
           const thumbnailUrl = allImages[randomIndex]
 
+          const creatorOrgId = event.creator_org_id
+          const creatorOrgName = event.creator_organization?.name || null
+
           albumsData.push({
             id: event.id,
             title: event.title,
@@ -100,12 +120,32 @@ export default function GalleryPage() {
             }),
             location: event.location,
             imageCount: allImages.length,
-            thumbnailUrl
+            thumbnailUrl,
+            creatorOrgId,
+            creatorOrgName
           })
+
+          // Track organizations
+          if (creatorOrgId && creatorOrgName) {
+            const existing = orgMap.get(creatorOrgId)
+            if (existing) {
+              existing.count++
+            } else {
+              orgMap.set(creatorOrgId, { name: creatorOrgName, count: 1 })
+            }
+          }
         }
       })
 
+      // Convert org map to array
+      const orgsData: Organization[] = Array.from(orgMap.entries()).map(([id, data]) => ({
+        id,
+        name: data.name,
+        eventCount: data.count
+      }))
+
       setAlbums(albumsData)
+      setOrganizations(orgsData)
     } catch (error) {
       console.error('Error fetching albums:', error)
     } finally {
@@ -155,6 +195,13 @@ export default function GalleryPage() {
     setAlbumImages([])
     setPreviewImage(null)
   }
+
+  // Filter albums based on search and organization
+  const filteredAlbums = albums.filter(album => {
+    const matchesSearch = album.title.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesOrg = selectedOrgId === null || album.creatorOrgId === selectedOrgId
+    return matchesSearch && matchesOrg
+  })
 
   // Image Preview Modal Component
   const ImagePreviewModal = () => {
@@ -329,8 +376,8 @@ export default function GalleryPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 pb-20">
       <div className="max-w-7xl mx-auto px-4 py-10">
         {/* Header */}
-        <div className="mb-10">
-          <div className="flex items-center gap-3 mb-3">
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-6">
             <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl shadow-lg">
               <Image className="h-8 w-8 text-white" />
             </div>
@@ -339,20 +386,74 @@ export default function GalleryPage() {
               <p className="text-gray-600 font-medium">Browse photos from all events</p>
             </div>
           </div>
+
+          {/* Search Bar */}
+          <div className="relative mb-4">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search events..."
+              className="w-full pl-12 pr-4 py-4 bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 focus:outline-none text-gray-900 font-medium transition-all"
+            />
+          </div>
+
+          {/* Organization Filter */}
+          {organizations.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                <Filter className="h-4 w-4" />
+                Filter by Organization
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedOrgId(null)}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    selectedOrgId === null
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg scale-105'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border-2 border-gray-200'
+                  }`}
+                >
+                  All Events ({albums.length})
+                </button>
+                {organizations.map((org) => (
+                  <button
+                    key={org.id}
+                    onClick={() => setSelectedOrgId(org.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                      selectedOrgId === org.id
+                        ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg scale-105'
+                        : 'bg-white text-gray-700 hover:bg-gray-50 border-2 border-gray-200'
+                    }`}
+                  >
+                    <Users className="h-4 w-4" />
+                    {org.name} ({org.eventCount})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Albums Grid */}
-        {albums.length === 0 ? (
+        {filteredAlbums.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="p-6 bg-white rounded-full shadow-lg mb-6">
               <ImageOff className="h-16 w-16 text-gray-400" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">No Photos Yet</h2>
-            <p className="text-gray-600">Event photos will appear here once posted</p>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              {searchQuery || selectedOrgId ? 'No Events Found' : 'No Photos Yet'}
+            </h2>
+            <p className="text-gray-600">
+              {searchQuery || selectedOrgId
+                ? 'Try adjusting your filters or search query'
+                : 'Event photos will appear here once posted'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {albums.map((album) => (
+            {filteredAlbums.map((album) => (
               <button
                 key={album.id}
                 onClick={() => openAlbum(album)}
@@ -378,6 +479,14 @@ export default function GalleryPage() {
                     <Image className="h-4 w-4 text-white" />
                     <span className="text-white text-sm font-bold">{album.imageCount}</span>
                   </div>
+
+                  {/* Organization Badge */}
+                  {album.creatorOrgName && (
+                    <div className="absolute top-3 left-3 bg-purple-500/90 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                      <Users className="h-3 w-3 text-white" />
+                      <span className="text-white text-xs font-bold">{album.creatorOrgName}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Album Info */}
