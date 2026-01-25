@@ -1,6 +1,6 @@
 // components/feed/ImagePreviewModal.tsx
 "use client"
-import { X, ChevronLeft, ChevronRight } from "lucide-react"
+import { X, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { useState, useEffect } from "react"
 
 interface ImagePreviewModalProps {
@@ -12,10 +12,17 @@ interface ImagePreviewModalProps {
 
 export function ImagePreviewModal({ images, initialIndex, isOpen, onClose }: ImagePreviewModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex)
+  const [isLoading, setIsLoading] = useState(true)
 
+  // Reset index when modal opens with a new initialIndex
   useEffect(() => {
     setCurrentIndex(initialIndex)
   }, [initialIndex])
+
+  // Reset loading state whenever the index changes
+  useEffect(() => {
+    setIsLoading(true)
+  }, [currentIndex])
 
   useEffect(() => {
     if (!isOpen) return
@@ -23,16 +30,17 @@ export function ImagePreviewModal({ images, initialIndex, isOpen, onClose }: Ima
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose()
-      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
-        setCurrentIndex(prev => prev - 1)
-      } else if (e.key === 'ArrowRight' && currentIndex < images.length - 1) {
-        setCurrentIndex(prev => prev + 1)
+      } else if (e.key === 'ArrowLeft') {
+        // Use functional state to avoid dependency issues
+        setCurrentIndex(prev => (prev > 0 ? prev - 1 : prev))
+      } else if (e.key === 'ArrowRight') {
+        setCurrentIndex(prev => (prev < images.length - 1 ? prev + 1 : prev))
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, currentIndex, images.length, onClose])
+  }, [isOpen, images.length, onClose]) // Removed currentIndex from deps to prevent listener thrashing
 
   if (!isOpen) return null
 
@@ -50,20 +58,20 @@ export function ImagePreviewModal({ images, initialIndex, isOpen, onClose }: Ima
 
   return (
     <div 
-      className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       {/* Close Button */}
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+        className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-20"
       >
         <X className="h-6 w-6" />
       </button>
 
       {/* Image Counter */}
       {images.length > 1 && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-2 rounded-full text-white text-sm font-medium z-10">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-2 rounded-full text-white text-sm font-medium z-20 border border-white/10">
           {currentIndex + 1} / {images.length}
         </div>
       )}
@@ -75,7 +83,7 @@ export function ImagePreviewModal({ images, initialIndex, isOpen, onClose }: Ima
             e.stopPropagation()
             goToPrevious()
           }}
-          className="absolute left-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+          className="absolute left-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-20 backdrop-blur-md"
         >
           <ChevronLeft className="h-8 w-8" />
         </button>
@@ -88,38 +96,49 @@ export function ImagePreviewModal({ images, initialIndex, isOpen, onClose }: Ima
             e.stopPropagation()
             goToNext()
           }}
-          className="absolute right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-10"
+          className="absolute right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-20 backdrop-blur-md"
         >
           <ChevronRight className="h-8 w-8" />
         </button>
       )}
 
-      {/* Image */}
+      {/* Main Image Container */}
       <div 
-        className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center"
+        className="relative max-w-7xl max-h-[85vh] w-full h-full flex items-center justify-center"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Loading Spinner */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="h-10 w-10 text-white animate-spin" />
+          </div>
+        )}
+
         <img
+          key={images[currentIndex]} // <--- CRITICAL FIX: Forces React to replace the node
           src={images[currentIndex]}
           alt={`Preview ${currentIndex + 1}`}
-          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          onLoad={() => setIsLoading(false)} // Turn off loader when image is ready
+          className={`max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-opacity duration-300 ${
+            isLoading ? 'opacity-0' : 'opacity-100'
+          }`}
         />
       </div>
 
-      {/* Thumbnail Navigation (for multiple images) */}
+      {/* Thumbnail Navigation */}
       {images.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/60 p-3 rounded-full max-w-[90vw] overflow-x-auto">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/60 p-3 rounded-full max-w-[90vw] overflow-x-auto z-20 border border-white/10">
           {images.map((img, idx) => (
             <button
-              key={idx}
+              key={img + idx} // Use combination of URL and index for unique key
               onClick={(e) => {
                 e.stopPropagation()
                 setCurrentIndex(idx)
               }}
-              className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden transition-all ${
+              className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden transition-all relative ${
                 idx === currentIndex 
-                  ? 'ring-2 ring-white scale-110' 
-                  : 'opacity-60 hover:opacity-100'
+                  ? 'ring-2 ring-white scale-110 z-10' 
+                  : 'opacity-60 hover:opacity-100 hover:scale-105'
               }`}
             >
               <img
