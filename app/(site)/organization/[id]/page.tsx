@@ -20,6 +20,7 @@ import {
   Heart,
   PinOff
 } from "lucide-react"
+import { ImagePreviewModal } from "@/components/feed/ImagePreviewModal"
 
 type Organization = {
   id: string
@@ -110,6 +111,11 @@ function OrganizationContent() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [bulletins, setBulletins] = useState<Bulletin[]>([])
   const [pictures, setPictures] = useState<string[]>([])
+
+  // Image preview modal state
+  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -337,6 +343,12 @@ function OrganizationContent() {
     setPictures(allImages)
   }
 
+  function openImagePreview(images: string[], index: number) {
+    setPreviewImages(images)
+    setPreviewIndex(index)
+    setPreviewOpen(true)
+  }
+
   async function togglePinPost(postId: string, currentPinOrder: number | null) {
     try {
       if (currentPinOrder !== null) {
@@ -511,6 +523,14 @@ function OrganizationContent() {
 
   return (
     <div className="max-w-5xl mx-auto pb-10 px-4">
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        images={previewImages}
+        initialIndex={previewIndex}
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+      />
+
       {/* Header */}
       <div className="mb-6">
         <button 
@@ -717,7 +737,14 @@ function OrganizationContent() {
                         'grid grid-cols-3 gap-2'
                       }`}>
                         {post.image_urls.slice(0, 3).map((url, idx) => (
-                          <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
+                          <div 
+                            key={idx} 
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openImagePreview(post.image_urls, idx)
+                            }}
+                            className="relative aspect-video rounded-lg overflow-hidden bg-gray-100 cursor-pointer hover:opacity-90 transition-opacity"
+                          >
                             <img src={url} alt={`Post ${idx + 1}`} className="w-full h-full object-cover" />
                             {idx === 2 && post.image_urls.length > 3 && (
                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -898,7 +925,13 @@ function OrganizationContent() {
                     <p className="text-gray-700 mb-3 line-clamp-3">{announcement.body}</p>
 
                     {announcement.image_url && (
-                      <div className="mb-3 rounded-lg overflow-hidden">
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openImagePreview([announcement.image_url!], 0)
+                        }}
+                        className="mb-3 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                      >
                         <img src={announcement.image_url} alt="Announcement" className="w-full h-48 object-cover" />
                       </div>
                     )}
@@ -979,7 +1012,14 @@ function OrganizationContent() {
                         'grid grid-cols-3 gap-2'
                       }`}>
                         {bulletin.image_urls.slice(0, 3).map((url, idx) => (
-                          <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
+                          <div 
+                            key={idx} 
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openImagePreview(bulletin.image_urls, idx)
+                            }}
+                            className="relative aspect-video rounded-lg overflow-hidden bg-gray-100 cursor-pointer hover:opacity-90 transition-opacity"
+                          >
                             <img src={url} alt={`Bulletin ${idx + 1}`} className="w-full h-full object-cover" />
                             {idx === 2 && bulletin.image_urls.length > 3 && (
                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -1027,6 +1067,7 @@ function OrganizationContent() {
                 {pictures.map((url, idx) => (
                   <div 
                     key={idx}
+                    onClick={() => openImagePreview(pictures, idx)}
                     className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:scale-105 transition-transform cursor-pointer group"
                   >
                     <img 

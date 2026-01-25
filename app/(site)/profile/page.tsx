@@ -27,6 +27,7 @@ import {
   Pin,
   PinOff
 } from "lucide-react"
+import { ImagePreviewModal } from "@/components/feed/ImagePreviewModal"
 
 type UserProfile = {
   id: string
@@ -112,6 +113,11 @@ export default function ProfilePage() {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
+  
+  // Image preview modal state
+  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [previewOpen, setPreviewOpen] = useState(false)
   
   // Crop modal state
   const [cropModalOpen, setCropModalOpen] = useState(false)
@@ -537,6 +543,12 @@ export default function ProfilePage() {
     } catch (error) {
       console.error('Error toggling pin:', error)
     }
+  }
+
+  function openImagePreview(images: string[], index: number) {
+    setPreviewImages(images)
+    setPreviewIndex(index)
+    setPreviewOpen(true)
   }
 
   function drawCanvas() {
@@ -1034,6 +1046,14 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4">
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        images={previewImages}
+        initialIndex={previewIndex}
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+      />
+
       {/* Crop Modal */}
       {cropModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1419,7 +1439,11 @@ export default function ProfilePage() {
                   {item.image_urls.slice(0, 4).map((url, idx) => (
                     <div 
                       key={idx} 
-                      className={`relative overflow-hidden rounded-lg bg-gray-200 ${
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openImagePreview(item.image_urls, idx)
+                      }}
+                      className={`relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-90 transition-opacity ${
                         item.image_urls.length === 1 ? 'aspect-video col-span-1' :
                         item.image_urls.length === 3 && idx === 0 ? 'aspect-video col-span-2' :
                         'aspect-square'
