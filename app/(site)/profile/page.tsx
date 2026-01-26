@@ -686,31 +686,43 @@ export default function ProfilePage() {
 
     // Navigate based on item type
     if (item.type === 'post' && item.event_id) {
-      // Navigate to event page
-      router.push(`/event/${item.event_id}`)
+      // Navigate to event page with scroll to post
+      router.push(`/event/${item.event_id}?scrollTo=${item.id}`)
     } else if (item.type === 'free_wall_post') {
       // Navigate to home page free wall tab with scroll to post
       router.push(`/home?tab=free_wall&scrollTo=${item.id}`)
     } else if (item.type === 'repost' && item.content_type) {
       // Navigate based on reposted content type
-      const tabMap: Record<string, string> = {
-        'post': 'events',
-        'free_wall_post': 'free_wall',
-        'bulletin': 'bulletin',
-        'announcement': 'announcements'
+      if (item.content_type === 'post' && item.event_id) {
+        // For reposted event posts, go to event page
+        router.push(`/event/${item.event_id}?scrollTo=${item.id}`)
+      } else {
+        // For other content types, go to home with appropriate tab
+        const tabMap: Record<string, string> = {
+          'post': 'events',
+          'free_wall_post': 'free_wall',
+          'bulletin': 'bulletin',
+          'announcement': 'announcements'
+        }
+        const tab = tabMap[item.content_type] || 'free_wall'
+        router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
       }
-      const tab = tabMap[item.content_type] || 'free_wall'
-      router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
     } else if (item.type === 'tagged' && item.content_type) {
       // Navigate based on tagged content type
-      const tabMap: Record<string, string> = {
-        'post': 'events',
-        'free_wall_post': 'free_wall',
-        'bulletin': 'bulletin',
-        'announcement': 'announcements'
+      if (item.content_type === 'post' && item.event_id) {
+        // For tagged event posts, go to event page
+        router.push(`/event/${item.event_id}?scrollTo=${item.id}`)
+      } else {
+        // For other content types, go to home with appropriate tab
+        const tabMap: Record<string, string> = {
+          'post': 'events',
+          'free_wall_post': 'free_wall',
+          'bulletin': 'bulletin',
+          'announcement': 'announcements'
+        }
+        const tab = tabMap[item.content_type] || 'free_wall'
+        router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
       }
-      const tab = tabMap[item.content_type] || 'free_wall'
-      router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
     }
   }
 

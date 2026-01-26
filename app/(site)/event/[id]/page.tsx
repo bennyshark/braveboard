@@ -1,6 +1,6 @@
 "use client"
-import { useState, useEffect, useRef } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useState, useEffect, useRef, Suspense } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { 
   ArrowLeft, Calendar, MapPin, Users, Tag, Pin, 
   MessageCircle, Loader2, AlertCircle, Plus, X, Building2, BookOpen, 
@@ -10,7 +10,6 @@ import { createBrowserClient } from "@supabase/ssr"
 import { PostCard } from "@/components/feed/PostCard"
 import { CreatePostDialog } from "@/components/posts/CreatePostDialog"
 
-// ... (Existing Type Definitions)
 type Post = {
   id: string
   author: string
@@ -37,8 +36,8 @@ type EventDetails = {
   description: string
   organizerType: string
   organizerName: string
-  organizerId: string | null // Added for permission check
-  creatorOrgId: string | null // Added for permission check
+  organizerId: string | null
+  creatorOrgId: string | null
   startDate: string
   endDate: string
   location: string
@@ -50,7 +49,6 @@ type EventDetails = {
   participantDetails: ParticipantData 
 }
 
-// ... (ParticipantModal Component remains the same)
 const ParticipantModal = ({ isOpen, onClose, data }: { isOpen: boolean; onClose: () => void; data: ParticipantData }) => {
   if (!isOpen) return null;
   return (
@@ -89,7 +87,6 @@ const ParticipantModal = ({ isOpen, onClose, data }: { isOpen: boolean; onClose:
   )
 }
 
-// ... (ParticipantList Component remains the same)
 const ParticipantList = ({ data }: { data: ParticipantData }) => {
   const [showModal, setShowModal] = useState(false)
   if (data.type === 'public') return <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-md">Public (All FAITH)</span>
@@ -107,7 +104,6 @@ const ParticipantList = ({ data }: { data: ParticipantData }) => {
   )
 }
 
-// --- NEW COMPONENT: Event Menu (3 Dots) ---
 const EventMenu = ({ 
   eventId, 
   onDelete 
@@ -158,20 +154,23 @@ const EventMenu = ({
   )
 }
 
-export default function EventDetailsPage() {
+function EventDetailsContent() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const eventId = params.id as string
   
   const [event, setEvent] = useState<EventDetails | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
   
-  // Permissions State
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [currentUserOrgs, setCurrentUserOrgs] = useState<string[]>([])
+  
+  const postRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -181,12 +180,10 @@ export default function EventDetailsPage() {
   const loadEventData = async () => {
     setIsLoading(true)
     try {
-      // 1. Get User Info
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setCurrentUserId(user.id)
         
-        // Get Admin Status and Orgs in parallel
         const [profileRes, orgRes] = await Promise.all([
            supabase.from('profiles').select('role').eq('id', user.id).single(),
            supabase.from('user_organizations').select('organization_id').eq('user_id', user.id).in('role', ['admin', 'officer'])
@@ -196,7 +193,6 @@ export default function EventDetailsPage() {
         if (orgRes.data) setCurrentUserOrgs(orgRes.data.map((o: any) => o.organization_id))
       }
 
-      // 2. Get Event Data
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select(`*, creator_org:organizations(name)`)
@@ -219,7 +215,6 @@ export default function EventDetailsPage() {
         organizerType = "organization"
       }
 
-      // ... (Org/Dept/Course fetching logic remains the same)
       const orgNames: string[] = []
       const deptNames: string[] = []
       const courseNames: string[] = []
@@ -245,8 +240,8 @@ export default function EventDetailsPage() {
         description: eventData.description || "",
         organizerType,
         organizerName,
-        organizerId: eventData.created_by, // Important for permissions
-        creatorOrgId: eventData.creator_org_id, // Important for permissions
+        organizerId: eventData.created_by,
+        creatorOrgId: eventData.creator_org_id,
         startDate: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         endDate: end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         location: eventData.location || "TBA",
@@ -263,12 +258,11 @@ export default function EventDetailsPage() {
         }
       })
 
-      // 3. Get Posts
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('*')
         .eq('event_id', eventId)
-        .order('pin_order', { ascending: true }) // Show pinned posts first if needed
+        .order('pin_order', { ascending: true })
         .order('created_at', { ascending: false })
 
       if (postsError) throw postsError
@@ -335,6 +329,25 @@ export default function EventDetailsPage() {
     if (eventId) loadEventData()
   }, [eventId])
 
+  // Handle scrollTo parameter
+  useEffect(() => {
+    const scrollTo = searchParams.get('scrollTo')
+    
+    if (scrollTo && !isLoading && posts.length > 0) {
+      setTimeout(() => {
+        const element = postRefs.current.get(scrollTo)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          setHighlightedId(scrollTo)
+          
+          setTimeout(() => {
+            setHighlightedId(null)
+          }, 3000)
+        }
+      }, 500)
+    }
+  }, [searchParams, isLoading, posts])
+
   if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-blue-500" /></div>
 
   if (!event) return (
@@ -345,7 +358,6 @@ export default function EventDetailsPage() {
     </div>
   )
 
-  // Permission Logic
   const canEdit = isFaithAdmin || 
                   (event.organizerType === 'organization' && event.creatorOrgId && currentUserOrgs.includes(event.creatorOrgId)) ||
                   event.organizerId === currentUserId;
@@ -362,7 +374,6 @@ export default function EventDetailsPage() {
             ? 'bg-gradient-to-br from-purple-50 via-purple-50 to-indigo-50 border-purple-200' 
             : 'bg-gradient-to-br from-orange-50 via-orange-50 to-amber-50 border-orange-200'
         }`}>
-          {/* Menu Button (Top Right) */}
           {canEdit && (
             <div className="absolute top-4 right-4 z-10">
               <EventMenu eventId={event.id} onDelete={handleDeleteEvent} />
@@ -389,7 +400,6 @@ export default function EventDetailsPage() {
             {event.description && <p className="text-gray-700 text-lg mb-6 leading-relaxed whitespace-pre-wrap">{event.description}</p>}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {/* Info Cards */}
               <div className="flex items-center gap-3 bg-white/60 p-3 rounded-lg border border-white/50">
                 <Calendar className="h-5 w-5 text-gray-600 flex-shrink-0" />
                 <div>
@@ -444,7 +454,21 @@ export default function EventDetailsPage() {
           </div>
 
           <div className="p-6 space-y-4">
-            {posts.length > 0 ? posts.map(post => <PostCard key={post.id} post={post} eventId={eventId} />) : (
+            {posts.length > 0 ? posts.map(post => (
+              <div
+                key={post.id}
+                ref={(el) => {
+                  if (el) {
+                    postRefs.current.set(post.id, el)
+                  }
+                }}
+                className={`transition-all duration-500 ${
+                  highlightedId === post.id ? 'ring-4 ring-blue-400 rounded-xl' : ''
+                }`}
+              >
+                <PostCard post={post} eventId={eventId} onPostUpdated={loadEventData} onPostDeleted={loadEventData} />
+              </div>
+            )) : (
               <div className="text-center py-12">
                 <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500 font-medium mb-4">No posts yet</p>
@@ -457,5 +481,13 @@ export default function EventDetailsPage() {
 
       <CreatePostDialog isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} eventId={eventId} onPostCreated={loadEventData} />
     </>
+  )
+}
+
+export default function EventDetailsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-blue-500" /></div>}>
+      <EventDetailsContent />
+    </Suspense>
   )
 }
