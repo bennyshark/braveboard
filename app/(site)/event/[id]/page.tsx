@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { 
   ArrowLeft, Calendar, MapPin, Users, Tag, Pin, 
   MessageCircle, Loader2, AlertCircle, Plus, X, Building2, BookOpen, 
-  MoreVertical, Edit, Trash2
+  MoreVertical, Edit, Trash2, Lock, Clock 
 } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { PostCard } from "@/components/feed/PostCard"
@@ -164,6 +164,10 @@ function EventDetailsContent() {
   const [posts, setPosts] = useState<Post[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
+  
+  // New State for Posting Status
+  const [isPostingExpired, setIsPostingExpired] = useState(false)
+
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -200,6 +204,17 @@ function EventDetailsContent() {
         .single()
 
       if (eventError) throw eventError
+
+      // --- EXPIRATION CHECK LOGIC ---
+      const deadlineString = eventData.posting_open_until || eventData.end_date
+      if (deadlineString) {
+        const deadlineDate = new Date(deadlineString)
+        const now = new Date()
+        setIsPostingExpired(now > deadlineDate)
+      } else {
+        setIsPostingExpired(false)
+      }
+      // -----------------------------
 
       const start = new Date(eventData.start_date)
       const end = new Date(eventData.end_date)
@@ -325,11 +340,15 @@ function EventDetailsContent() {
     }
   }
 
+  const handleCreatePostClick = () => {
+    if (isPostingExpired) return
+    setIsCreatePostOpen(true)
+  }
+
   useEffect(() => {
     if (eventId) loadEventData()
   }, [eventId])
 
-  // Handle scrollTo parameter
   useEffect(() => {
     const scrollTo = searchParams.get('scrollTo')
     
@@ -395,6 +414,14 @@ function EventDetailsContent() {
               }`}>
                 {event.organizerName}
               </span>
+
+              {/* ENDED BADGE */}
+              {isPostingExpired && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-red-100 text-red-700 border border-red-200">
+                    <Clock className="h-3 w-3" />
+                    Ended
+                </span>
+              )}
             </div>
 
             {event.description && <p className="text-gray-700 text-lg mb-6 leading-relaxed whitespace-pre-wrap">{event.description}</p>}
@@ -448,8 +475,28 @@ function EventDetailsContent() {
               <MessageCircle className="h-5 w-5 text-gray-600" />
               <h2 className="text-xl font-black text-gray-900">Discussions ({posts.length})</h2>
             </div>
-            <button onClick={() => setIsCreatePostOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-bold hover:shadow-lg transition-all">
-              <Plus className="h-4 w-4" /> Add Post
+
+            {/* HEADER ADD POST BUTTON */}
+            <button 
+              onClick={handleCreatePostClick}
+              disabled={isPostingExpired}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all ${
+                isPostingExpired 
+                ? 'bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-300' 
+                : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-lg'
+              }`}
+            >
+              {isPostingExpired ? (
+                <>
+                  <Lock className="h-4 w-4" />
+                  Posting Closed
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Add Post
+                </>
+              )}
             </button>
           </div>
 
@@ -472,7 +519,19 @@ function EventDetailsContent() {
               <div className="text-center py-12">
                 <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500 font-medium mb-4">No posts yet</p>
-                <button onClick={() => setIsCreatePostOpen(true)} className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors">Be the first to post!</button>
+                
+                {/* EMPTY STATE BUTTON */}
+                <button 
+                  onClick={handleCreatePostClick}
+                  disabled={isPostingExpired}
+                  className={`px-6 py-3 rounded-lg font-bold transition-colors ${
+                    isPostingExpired
+                    ? 'bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {isPostingExpired ? "Event has ended" : "Be the first to post!"}
+                </button>
               </div>
             )}
           </div>

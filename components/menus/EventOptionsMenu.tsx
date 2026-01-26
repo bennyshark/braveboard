@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 
 interface EventOptionsMenuProps {
   eventId: string
-  onUpdate: () => void
+  onUpdate?: () => void // <--- ADDED '?' (Made optional)
   onDelete?: () => void
 }
 
@@ -69,8 +69,17 @@ export function EventOptionsMenu({ eventId, onUpdate, onDelete }: EventOptionsMe
       if (error) throw error
       
       setShowMenu(false)
-      if (onDelete) onDelete()
-      else onUpdate()
+      
+      // Fixed logic: Check if functions exist before calling
+      if (onDelete) {
+        onDelete()
+      } else if (onUpdate) {
+        onUpdate()
+      } else {
+        // Fallback: Refresh page if no callbacks provided
+        router.refresh()
+      }
+      
     } catch (error: any) {
       console.error('Error deleting event:', error)
       alert(`Failed to delete: ${error.message}`)
