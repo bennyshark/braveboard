@@ -338,7 +338,6 @@ export default function ProfilePage() {
         }
 
         if (freeWallData && freeWallData.length > 0) {
-          console.log('Free wall posts loaded:', freeWallData.length)
           const mappedFreeWall = freeWallData.map((p: any) => ({
             id: p.id,
             type: 'free_wall_post' as const,
@@ -354,9 +353,6 @@ export default function ProfilePage() {
             event: null
           }))
           items = [...items, ...mappedFreeWall]
-          console.log('Total items after free wall:', items.length)
-        } else {
-          console.log('No free wall posts found for user')
         }
       }
 
@@ -562,16 +558,11 @@ export default function ProfilePage() {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
 
-      console.log('Total items before pagination:', items.length)
-      console.log('Item types:', items.map(i => i.type))
-
       // Apply pagination
       const currentLength = reset ? 0 : feedItems.length
       const startIndex = currentLength
       const endIndex = startIndex + ITEMS_PER_PAGE
       const paginatedItems = items.slice(startIndex, endIndex)
-
-      console.log('Paginated items:', paginatedItems.length, 'from', startIndex, 'to', endIndex)
 
       // Remove duplicates
       const uniqueItems = paginatedItems.filter((item, index, self) => 
@@ -584,7 +575,6 @@ export default function ProfilePage() {
       )
 
       const newItems = reset ? uniqueItems : [...feedItems, ...uniqueItems]
-      console.log('Final items to display:', newItems.length)
       setFeedItems(newItems)
       setHasMore(endIndex < items.length)
 
@@ -685,6 +675,43 @@ export default function ProfilePage() {
     setPreviewImages(images)
     setPreviewIndex(index)
     setPreviewOpen(true)
+  }
+
+  // Navigation handler for items
+  function handleItemClick(item: FeedPost, e: React.MouseEvent) {
+    // Don't navigate if clicking on pin button or images
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.image-preview')) {
+      return
+    }
+
+    // Navigate based on item type
+    if (item.type === 'post' && item.event_id) {
+      // Navigate to event page
+      router.push(`/event/${item.event_id}`)
+    } else if (item.type === 'free_wall_post') {
+      // Navigate to home page free wall tab with scroll to post
+      router.push(`/home?tab=free_wall&scrollTo=${item.id}`)
+    } else if (item.type === 'repost' && item.content_type) {
+      // Navigate based on reposted content type
+      const tabMap: Record<string, string> = {
+        'post': 'events',
+        'free_wall_post': 'free_wall',
+        'bulletin': 'bulletin',
+        'announcement': 'announcements'
+      }
+      const tab = tabMap[item.content_type] || 'free_wall'
+      router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
+    } else if (item.type === 'tagged' && item.content_type) {
+      // Navigate based on tagged content type
+      const tabMap: Record<string, string> = {
+        'post': 'events',
+        'free_wall_post': 'free_wall',
+        'bulletin': 'bulletin',
+        'announcement': 'announcements'
+      }
+      const tab = tabMap[item.content_type] || 'free_wall'
+      router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
+    }
   }
 
   function drawCanvas() {
@@ -1148,13 +1175,6 @@ export default function ProfilePage() {
     }
   }
 
-  const handlePostClick = (eventId: string | null | undefined) => {
-    if (eventId) {
-      router.push(`/event/${eventId}`)
-    }
-    // For free wall posts (no event_id), don't navigate
-  }
-
   const getContentTypeLabel = (contentType: string | undefined) => {
     switch(contentType) {
       case 'post': return 'Post'
@@ -1500,9 +1520,9 @@ export default function ProfilePage() {
           {feedItems.map((item) => (
             <div 
               key={`${item.type}-${item.id}-${item.repost_id || ''}-${item.tag_id || ''}`}
-              onClick={() => handlePostClick(item.event_id)}
+              onClick={(e) => handleItemClick(item, e)}
               className={`p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group relative ${
-                item.event_id ? 'cursor-pointer' : ''
+                item.event_id || item.type === 'free_wall_post' || item.type === 'repost' || item.type === 'tagged' ? 'cursor-pointer' : ''
               }`}
             >
               {activeFilter === 'feed' && (
@@ -1575,7 +1595,7 @@ export default function ProfilePage() {
               </div>
 
               {item.image_urls && item.image_urls.length > 0 && (
-                <div className={`mb-3 ${
+                <div className={`mb-3 image-preview ${
                   item.image_urls.length === 1 ? 'grid grid-cols-1' :
                   item.image_urls.length === 2 ? 'grid grid-cols-2 gap-2' :
                   item.image_urls.length === 3 ? 'grid grid-cols-3 gap-2' :
