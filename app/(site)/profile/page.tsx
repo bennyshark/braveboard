@@ -66,8 +66,8 @@ type UserOrganization = {
 
 type FeedPost = {
   id: string
-  type: 'post' | 'repost' | 'tagged'
-  event_id: string
+  type: 'post' | 'free_wall_post' | 'repost' | 'tagged'
+  event_id?: string | null
   content: string
   image_urls: string[]
   likes: number
@@ -76,20 +76,21 @@ type FeedPost = {
   created_at: string
   pinned_to_profile: boolean
   pinned_at: string | null
-  event: {
+  event?: {
     id: string
     title: string
-  }
+  } | null
   repost_comment?: string
   reposted_by?: string
   tagged_by?: string
   repost_id?: string
   tag_id?: string
+  content_type?: string
 }
 
 type DragType = 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | null
 
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -107,19 +108,16 @@ export default function ProfilePage() {
   const [editBio, setEditBio] = useState("")
   const [uploading, setUploading] = useState(false)
   
-  // Feed filter state
   const [activeFilter, setActiveFilter] = useState<'feed' | 'posts' | 'reposts' | 'tagged'>('feed')
   const [feedItems, setFeedItems] = useState<FeedPost[]>([])
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
   
-  // Image preview modal state
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [previewIndex, setPreviewIndex] = useState(0)
   const [previewOpen, setPreviewOpen] = useState(false)
   
-  // Crop modal state
   const [cropModalOpen, setCropModalOpen] = useState(false)
   const [cropType, setCropType] = useState<'avatar' | 'cover'>('avatar')
   const [imageSrc, setImageSrc] = useState<string>("")
@@ -150,7 +148,6 @@ export default function ProfilePage() {
     }
   }, [imageSrc, crop])
 
-  // Infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
       entries => {
@@ -232,6 +229,12 @@ export default function ProfilePage() {
         .from('posts')
         .select('*', { count: 'exact', head: true })
         .eq('author_id', user.id)
+        .not('posted_as_type', 'in', '(organization,faith_admin)')
+
+      const { count: freeWallCount } = await supabase
+        .from('free_wall_posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('author_id', user.id)
 
       const { count: commentsCount } = await supabase
         .from('comments')
@@ -240,7 +243,7 @@ export default function ProfilePage() {
 
       setStats({
         eventsCreated: eventsCount || 0,
-        postsCreated: postsCount || 0,
+        postsCreated: (postsCount || 0) + (freeWallCount || 0),
         interactions: commentsCount || 0
       })
 
@@ -262,12 +265,12 @@ export default function ProfilePage() {
     setLoadingMore(true)
 
     try {
-      const offset = reset ? 0 : feedItems.length
       let items: FeedPost[] = []
 
+      // Load posts (event posts and free wall posts)
       if (activeFilter === 'posts' || activeFilter === 'feed') {
-        // Load user's posts
-        const { data: postsData } = await supabase
+        // Load event posts (exclude organization/faith_admin posts)
+        const { data: postsData, error: postsError } = await supabase
           .from('posts')
           .select(`
             id,
@@ -286,23 +289,79 @@ export default function ProfilePage() {
             )
           `)
           .eq('author_id', profile.id)
+          .not('posted_as_type', 'in', '(organization,faith_admin)')
+          .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-          .range(offset, offset + ITEMS_PER_PAGE - 1)
 
-        if (postsData) {
-          items = [...items, ...postsData.map((p: any) => ({
-            ...p,
+        if (postsError) {
+          console.error('Error loading posts:', postsError)
+        }
+
+        if (postsData && postsData.length > 0) {
+          const mappedPosts = postsData.map((p: any) => ({
+            id: p.id,
             type: 'post' as const,
+            event_id: p.event_id,
+            content: p.content,
+            image_urls: p.image_urls || [],
             likes: p.likes || 0,
             comments: p.comments || 0,
             reaction_count: p.reaction_count || 0,
-            pinned_at: p.pinned_at || null
-          }))]
+            created_at: p.created_at,
+            pinned_to_profile: p.pinned_to_profile || false,
+            pinned_at: p.pinned_at || null,
+            event: Array.isArray(p.event) ? p.event[0] : p.event
+          }))
+          items = [...items, ...mappedPosts]
+        }
+
+        // Load free wall posts
+        const { data: freeWallData, error: freeWallError } = await supabase
+          .from('free_wall_posts')
+          .select(`
+            id,
+            content,
+            image_urls,
+            comments,
+            reaction_count,
+            repost_count,
+            created_at,
+            pinned_to_profile,
+            pinned_at
+          `)
+          .eq('author_id', profile.id)
+          .order('pinned_to_profile', { ascending: false })
+          .order('created_at', { ascending: false })
+
+        if (freeWallError) {
+          console.error('Error loading free wall posts:', freeWallError)
+        }
+
+        if (freeWallData && freeWallData.length > 0) {
+          console.log('Free wall posts loaded:', freeWallData.length)
+          const mappedFreeWall = freeWallData.map((p: any) => ({
+            id: p.id,
+            type: 'free_wall_post' as const,
+            event_id: null,
+            content: p.content,
+            image_urls: p.image_urls || [],
+            likes: 0,
+            comments: parseInt(p.comments) || 0,
+            reaction_count: parseInt(p.reaction_count) || 0,
+            created_at: p.created_at,
+            pinned_to_profile: p.pinned_to_profile === true || p.pinned_to_profile === 'true',
+            pinned_at: p.pinned_at || null,
+            event: null
+          }))
+          items = [...items, ...mappedFreeWall]
+          console.log('Total items after free wall:', items.length)
+        } else {
+          console.log('No free wall posts found for user')
         }
       }
 
+      // Load reposts
       if (activeFilter === 'reposts' || activeFilter === 'feed') {
-        // Load user's reposts
         const { data: repostsData } = await supabase
           .from('reposts')
           .select(`
@@ -315,62 +374,84 @@ export default function ProfilePage() {
             pinned_at
           `)
           .eq('user_id', profile.id)
-          .eq('content_type', 'post')
+          .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-          .range(offset, offset + ITEMS_PER_PAGE - 1)
 
         if (repostsData && repostsData.length > 0) {
-          const postIds = repostsData.map(r => r.content_id)
-          const { data: postsData } = await supabase
-            .from('posts')
-            .select(`
-              id,
-              event_id,
-              content,
-              image_urls,
-              likes,
-              comments,
-              reaction_count,
-              created_at,
-              event:events (
-                id,
-                title
-              )
-            `)
-            .in('id', postIds)
+          for (const repost of repostsData) {
+            let contentData = null
+            
+            // Fetch content based on type
+            if (repost.content_type === 'post') {
+              const { data } = await supabase
+                .from('posts')
+                .select(`
+                  id,
+                  event_id,
+                  content,
+                  image_urls,
+                  likes,
+                  comments,
+                  reaction_count,
+                  created_at,
+                  event:events (
+                    id,
+                    title
+                  )
+                `)
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            } else if (repost.content_type === 'free_wall_post') {
+              const { data } = await supabase
+                .from('free_wall_posts')
+                .select('*')
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            } else if (repost.content_type === 'bulletin') {
+              const { data } = await supabase
+                .from('bulletins')
+                .select('*')
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            } else if (repost.content_type === 'announcement') {
+              const { data } = await supabase
+                .from('announcements')
+                .select('*')
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            }
 
-          if (postsData) {
-            const repostItems = repostsData.map(repost => {
-              const post = postsData.find((p: any) => p.id === repost.content_id)
-              if (!post) return null
+            if (contentData) {
+              const eventData = contentData.event ? (Array.isArray(contentData.event) ? contentData.event[0] : contentData.event) : null
               
-              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
-              
-              return {
-                id: post.id,
+              items.push({
+                id: contentData.id,
                 repost_id: repost.id,
                 type: 'repost' as const,
-                event_id: post.event_id,
-                content: post.content,
-                image_urls: post.image_urls || [],
-                likes: post.likes || 0,
-                comments: post.comments || 0,
-                reaction_count: post.reaction_count || 0,
+                event_id: contentData.event_id || null,
+                content: contentData.content || contentData.body || '',
+                image_urls: contentData.image_urls || [],
+                likes: contentData.likes || 0,
+                comments: contentData.comments || 0,
+                reaction_count: contentData.reaction_count || 0,
                 created_at: repost.created_at,
                 pinned_to_profile: repost.pinned_to_profile || false,
                 pinned_at: repost.pinned_at || null,
-                event: eventData || { id: post.event_id, title: 'Unknown Event' },
-                repost_comment: repost.repost_comment
-              }
-            }).filter(item => item !== null) as FeedPost[]
-            
-            items = [...items, ...repostItems]
+                event: eventData,
+                repost_comment: repost.repost_comment,
+                content_type: repost.content_type
+              })
+            }
           }
         }
       }
 
+      // Load tagged items
       if (activeFilter === 'tagged' || activeFilter === 'feed') {
-        // Load posts where user is tagged
         const { data: tagsData } = await supabase
           .from('tags')
           .select(`
@@ -383,88 +464,129 @@ export default function ProfilePage() {
             pinned_at
           `)
           .eq('tagged_user_id', profile.id)
-          .eq('content_type', 'post')
+          .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-          .range(offset, offset + ITEMS_PER_PAGE - 1)
 
         if (tagsData && tagsData.length > 0) {
-          const postIds = tagsData.map(t => t.content_id)
-          const { data: postsData } = await supabase
-            .from('posts')
-            .select(`
-              id,
-              event_id,
-              content,
-              image_urls,
-              likes,
-              comments,
-              reaction_count,
-              created_at,
-              event:events (
-                id,
-                title
-              )
-            `)
-            .in('id', postIds)
+          for (const tag of tagsData) {
+            let contentData = null
+            
+            // Fetch content based on type
+            if (tag.content_type === 'post') {
+              const { data } = await supabase
+                .from('posts')
+                .select(`
+                  id,
+                  event_id,
+                  content,
+                  image_urls,
+                  likes,
+                  comments,
+                  reaction_count,
+                  created_at,
+                  event:events (
+                    id,
+                    title
+                  )
+                `)
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'free_wall_post') {
+              const { data } = await supabase
+                .from('free_wall_posts')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'bulletin') {
+              const { data } = await supabase
+                .from('bulletins')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'announcement') {
+              const { data } = await supabase
+                .from('announcements')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'repost') {
+              const { data } = await supabase
+                .from('reposts')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            }
 
-          if (postsData) {
-            const taggedItems = tagsData.map(tag => {
-              const post = postsData.find((p: any) => p.id === tag.content_id)
-              if (!post) return null
+            if (contentData) {
+              const eventData = contentData.event ? (Array.isArray(contentData.event) ? contentData.event[0] : contentData.event) : null
               
-              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
-              
-              return {
-                id: post.id,
+              items.push({
+                id: contentData.id,
                 tag_id: tag.id,
                 type: 'tagged' as const,
-                event_id: post.event_id,
-                content: post.content,
-                image_urls: post.image_urls || [],
-                likes: post.likes || 0,
-                comments: post.comments || 0,
-                reaction_count: post.reaction_count || 0,
+                event_id: contentData.event_id || null,
+                content: contentData.content || contentData.body || '',
+                image_urls: contentData.image_urls || [],
+                likes: contentData.likes || 0,
+                comments: contentData.comments || 0,
+                reaction_count: contentData.reaction_count || 0,
                 created_at: tag.created_at,
                 pinned_to_profile: tag.pinned_to_profile || false,
                 pinned_at: tag.pinned_at || null,
-                event: eventData || { id: post.event_id, title: 'Unknown Event' }
-              }
-            }).filter(item => item !== null) as FeedPost[]
-            
-            items = [...items, ...taggedItems]
+                event: eventData,
+                content_type: tag.content_type
+              })
+            }
           }
         }
       }
 
-      // Sort by pinned_at first (most recently pinned), then created_at for feed
-      if (activeFilter === 'feed') {
-        items.sort((a, b) => {
-          // Both pinned: sort by pinned_at (most recent pin first)
-          if (a.pinned_to_profile && b.pinned_to_profile) {
-            const aPinnedAt = a.pinned_at ? new Date(a.pinned_at).getTime() : 0
-            const bPinnedAt = b.pinned_at ? new Date(b.pinned_at).getTime() : 0
-            return bPinnedAt - aPinnedAt
-          }
-          
-          // Only a is pinned
-          if (a.pinned_to_profile && !b.pinned_to_profile) return -1
-          
-          // Only b is pinned
-          if (!a.pinned_to_profile && b.pinned_to_profile) return 1
-          
-          // Neither pinned: sort by created_at
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        })
-      }
+      // Sort all items (for all filters)
+      items.sort((a, b) => {
+        // Pinned items first
+        if (a.pinned_to_profile && b.pinned_to_profile) {
+          const aPinnedAt = a.pinned_at ? new Date(a.pinned_at).getTime() : 0
+          const bPinnedAt = b.pinned_at ? new Date(b.pinned_at).getTime() : 0
+          return bPinnedAt - aPinnedAt
+        }
+        
+        if (a.pinned_to_profile && !b.pinned_to_profile) return -1
+        if (!a.pinned_to_profile && b.pinned_to_profile) return 1
+        
+        // Then by created_at
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      })
+
+      console.log('Total items before pagination:', items.length)
+      console.log('Item types:', items.map(i => i.type))
+
+      // Apply pagination
+      const currentLength = reset ? 0 : feedItems.length
+      const startIndex = currentLength
+      const endIndex = startIndex + ITEMS_PER_PAGE
+      const paginatedItems = items.slice(startIndex, endIndex)
+
+      console.log('Paginated items:', paginatedItems.length, 'from', startIndex, 'to', endIndex)
 
       // Remove duplicates
-      const uniqueItems = items.filter((item, index, self) => 
-        index === self.findIndex(t => t.id === item.id && t.type === item.type)
+      const uniqueItems = paginatedItems.filter((item, index, self) => 
+        index === self.findIndex(t => 
+          t.id === item.id && 
+          t.type === item.type &&
+          (t.repost_id === item.repost_id || (!t.repost_id && !item.repost_id)) &&
+          (t.tag_id === item.tag_id || (!t.tag_id && !item.tag_id))
+        )
       )
 
       const newItems = reset ? uniqueItems : [...feedItems, ...uniqueItems]
+      console.log('Final items to display:', newItems.length)
       setFeedItems(newItems)
-      setHasMore(uniqueItems.length === ITEMS_PER_PAGE)
+      setHasMore(endIndex < items.length)
 
     } catch (error) {
       console.error('Error loading feed items:', error)
@@ -477,9 +599,14 @@ export default function ProfilePage() {
     if (!profile) return
 
     try {
-      // Check how many items are already pinned
       const { count: postsCount } = await supabase
         .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('author_id', profile.id)
+        .eq('pinned_to_profile', true)
+
+      const { count: freeWallCount } = await supabase
+        .from('free_wall_posts')
         .select('*', { count: 'exact', head: true })
         .eq('author_id', profile.id)
         .eq('pinned_to_profile', true)
@@ -496,7 +623,7 @@ export default function ProfilePage() {
         .eq('tagged_user_id', profile.id)
         .eq('pinned_to_profile', true)
 
-      const totalPinned = (postsCount || 0) + (repostsCount || 0) + (tagsCount || 0)
+      const totalPinned = (postsCount || 0) + (freeWallCount || 0) + (repostsCount || 0) + (tagsCount || 0)
 
       if (!currentlyPinned && totalPinned >= 3) {
         alert('You can only pin up to 3 items to your profile')
@@ -509,6 +636,16 @@ export default function ProfilePage() {
       if (item.type === 'post') {
         const { error } = await supabase
           .from('posts')
+          .update({ 
+            pinned_to_profile: !currentlyPinned,
+            pinned_at: !currentlyPinned ? now : null
+          })
+          .eq('id', item.id)
+
+        if (error) throw error
+      } else if (item.type === 'free_wall_post') {
+        const { error } = await supabase
+          .from('free_wall_posts')
           .update({ 
             pinned_to_profile: !currentlyPinned,
             pinned_at: !currentlyPinned ? now : null
@@ -538,7 +675,6 @@ export default function ProfilePage() {
         if (error) throw error
       }
 
-      // Reload feed items
       loadFeedItems(true)
     } catch (error) {
       console.error('Error toggling pin:', error)
@@ -1012,8 +1148,22 @@ export default function ProfilePage() {
     }
   }
 
-  const handlePostClick = (eventId: string) => {
-    router.push(`/event/${eventId}`)
+  const handlePostClick = (eventId: string | null | undefined) => {
+    if (eventId) {
+      router.push(`/event/${eventId}`)
+    }
+    // For free wall posts (no event_id), don't navigate
+  }
+
+  const getContentTypeLabel = (contentType: string | undefined) => {
+    switch(contentType) {
+      case 'post': return 'Post'
+      case 'free_wall_post': return 'Free Wall'
+      case 'bulletin': return 'Bulletin'
+      case 'announcement': return 'Announcement'
+      case 'repost': return 'Repost'
+      default: return ''
+    }
   }
 
   const feedFilters = [
@@ -1046,7 +1196,6 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4">
-      {/* Image Preview Modal */}
       <ImagePreviewModal
         images={previewImages}
         initialIndex={previewIndex}
@@ -1054,7 +1203,6 @@ export default function ProfilePage() {
         onClose={() => setPreviewOpen(false)}
       />
 
-      {/* Crop Modal */}
       {cropModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto">
@@ -1118,15 +1266,12 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-black text-gray-900 mb-2">Profile</h1>
         <p className="text-gray-600">Manage your personal information</p>
       </div>
 
-      {/* Main Profile Card */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
-        {/* Cover Area */}
         <div className="relative h-32 bg-gradient-to-r from-blue-500 to-blue-600 group">
           {profile.cover_url && (
             <img 
@@ -1147,11 +1292,9 @@ export default function ProfilePage() {
           </label>
         </div>
         
-        {/* Profile Info */}
         <div className="px-8 pb-8">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-16 mb-6">
             <div className="flex items-end gap-4">
-              {/* Avatar */}
               <div className="relative group">
                 {profile.avatar_url ? (
                   <img 
@@ -1185,14 +1328,12 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* Name & Role */}
               <div className="mb-2">
                 <h2 className="text-2xl font-black text-gray-900">{getFullName()}</h2>
                 <p className="text-gray-600 text-sm">{profile.email}</p>
               </div>
             </div>
 
-            {/* Edit Button */}
             <button 
               onClick={() => setIsEditMode(!isEditMode)}
               className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-sm transition-colors flex items-center gap-2"
@@ -1202,7 +1343,6 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          {/* Bio Section */}
           <div className="mb-6">
             {isEditMode ? (
               <div className="space-y-3">
@@ -1234,7 +1374,6 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* Stats Section */}
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 text-center">
               <Calendar className="h-6 w-6 text-blue-600 mx-auto mb-2" />
@@ -1255,7 +1394,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Info Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
               <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -1294,7 +1432,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Organizations */}
       {organizations.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
           <div className="flex items-center gap-2 mb-4">
@@ -1331,7 +1468,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Feed Filters */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -1360,15 +1496,15 @@ export default function ProfilePage() {
           })}
         </div>
 
-        {/* Feed Items */}
         <div className="space-y-3">
           {feedItems.map((item) => (
             <div 
-              key={`${item.type}-${item.id}`}
+              key={`${item.type}-${item.id}-${item.repost_id || ''}-${item.tag_id || ''}`}
               onClick={() => handlePostClick(item.event_id)}
-              className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer group relative"
+              className={`p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group relative ${
+                item.event_id ? 'cursor-pointer' : ''
+              }`}
             >
-              {/* Pin Button - Only visible in Feed filter */}
               {activeFilter === 'feed' && (
                 <button
                   onClick={(e) => {
@@ -1390,18 +1526,23 @@ export default function ProfilePage() {
                 </button>
               )}
 
-              {/* Type Badge */}
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 {item.type === 'repost' && (
                   <span className="flex items-center gap-1 text-xs text-green-600 font-bold">
                     <Repeat2 className="h-3 w-3" />
-                    Reposted
+                    Reposted {item.content_type && `• ${getContentTypeLabel(item.content_type)}`}
                   </span>
                 )}
                 {item.type === 'tagged' && (
                   <span className="flex items-center gap-1 text-xs text-purple-600 font-bold">
                     <AtSign className="h-3 w-3" />
-                    Tagged
+                    Tagged {item.content_type && `• ${getContentTypeLabel(item.content_type)}`}
+                  </span>
+                )}
+                {item.type === 'free_wall_post' && (
+                  <span className="flex items-center gap-1 text-xs text-orange-600 font-bold">
+                    <MessageSquare className="h-3 w-3" />
+                    Free Wall Post
                   </span>
                 )}
                 {item.pinned_to_profile && activeFilter === 'feed' && (
@@ -1412,7 +1553,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* Repost Comment */}
               {item.type === 'repost' && item.repost_comment && (
                 <div className="mb-2 p-2 bg-white rounded-lg border-l-4 border-green-500">
                   <p className="text-sm text-gray-700 italic">{item.repost_comment}</p>
@@ -1421,15 +1561,20 @@ export default function ProfilePage() {
 
               <div className="flex items-start gap-3 mb-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
-                    {item.event?.title || 'Event'}
-                  </p>
-                  <p className="text-sm text-gray-800 line-clamp-2 mb-2">{item.content}</p>
+                  {item.event && item.event.title && (
+                    <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
+                      {item.event.title}
+                    </p>
+                  )}
+                  {item.content && (
+                    <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap mb-2">
+                      {item.content}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Image Grid */}
-              {item.image_urls.length > 0 && (
+              {item.image_urls && item.image_urls.length > 0 && (
                 <div className={`mb-3 ${
                   item.image_urls.length === 1 ? 'grid grid-cols-1' :
                   item.image_urls.length === 2 ? 'grid grid-cols-2 gap-2' :
@@ -1481,7 +1626,7 @@ export default function ProfilePage() {
                   <MessageSquare className="h-3 w-3" />
                   {item.comments}
                 </span>
-                {item.image_urls.length > 0 && (
+                {item.image_urls && item.image_urls.length > 0 && (
                   <>
                     <span>•</span>
                     <span className="flex items-center gap-1">
@@ -1494,17 +1639,14 @@ export default function ProfilePage() {
             </div>
           ))}
 
-          {/* Loading More */}
           {loadingMore && (
             <div className="flex justify-center py-4">
               <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
             </div>
           )}
 
-          {/* Observer Target */}
           <div ref={observerTarget} className="h-4" />
 
-          {/* No Items */}
           {!loadingMore && feedItems.length === 0 && (
             <div className="text-center py-12 text-gray-500">
               <p className="font-medium">No {activeFilter} found</p>
