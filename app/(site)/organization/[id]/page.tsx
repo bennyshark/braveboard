@@ -474,6 +474,38 @@ function OrganizationContent() {
     }
   }
 
+  function handlePostClick(post: Post, e: React.MouseEvent) {
+    // Don't navigate if clicking on pin button or images
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.image-preview')) {
+      return
+    }
+    router.push(`/event/${post.event_id}?scrollTo=${post.id}`)
+  }
+
+  function handleEventClick(event: Event, e: React.MouseEvent) {
+    // Don't navigate if clicking on pin button
+    if ((e.target as HTMLElement).closest('button')) {
+      return
+    }
+    router.push(`/event/${event.id}`)
+  }
+
+  function handleAnnouncementClick(announcement: Announcement, e: React.MouseEvent) {
+    // Don't navigate if clicking on pin button or images
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.image-preview')) {
+      return
+    }
+    router.push(`/home?tab=announcements&scrollTo=${announcement.id}`)
+  }
+
+  function handleBulletinClick(bulletin: Bulletin, e: React.MouseEvent) {
+    // Don't navigate if clicking on pin button or images
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.image-preview')) {
+      return
+    }
+    router.push(`/home?tab=bulletin&scrollTo=${bulletin.id}`)
+  }
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',

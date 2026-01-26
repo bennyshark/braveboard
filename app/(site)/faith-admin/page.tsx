@@ -4,6 +4,7 @@
 import { useState, useEffect, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
+import { ImagePreviewModal } from "@/components/feed/ImagePreviewModal" // Ensure path matches your file structure
 import { 
   Shield,
   Calendar, 
@@ -13,7 +14,6 @@ import {
   Image as ImageIcon,
   Settings,
   Loader2,
-  AlertCircle,
   ArrowLeft,
   Pin,
   Clock,
@@ -39,6 +39,7 @@ type Post = {
   repost_count: number
   created_at: string
   pin_order: number | null
+  posted_as_type: 'user' | 'organization' | 'faith_admin'
   event: {
     id: string
     title: string
@@ -102,6 +103,11 @@ function FaithAdminContent() {
   const [bulletins, setBulletins] = useState<Bulletin[]>([])
   const [pictures, setPictures] = useState<string[]>([])
 
+  // Image Modal State
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
@@ -114,6 +120,13 @@ function FaithAdminContent() {
   useEffect(() => {
     loadTabContent()
   }, [activeTab])
+
+  // Helper to open image modal
+  const openImagePreview = (images: string[], index: number) => {
+    setPreviewImages(images)
+    setPreviewIndex(index)
+    setIsPreviewOpen(true)
+  }
 
   async function loadFaithAdminData() {
     try {
@@ -172,21 +185,11 @@ function FaithAdminContent() {
   }
 
   async function loadPosts() {
-    // Get events created by FAITH admin
-    const { data: eventsData } = await supabase
-      .from('events')
-      .select('id')
-      .eq('creator_type', 'faith_admin')
-
-    if (!eventsData || eventsData.length === 0) {
-      setPosts([])
-      return
-    }
-
-    const eventIds = eventsData.map(e => e.id)
-
-    // Fetch posts that are posted BY faith admin
-    const { data: postsData } = await supabase
+    // UPDATED LOGIC: 
+    // We strictly look for posts where posted_as_type is 'faith_admin'.
+    // We do NOT filter by event creator. This allows FAITH Admin to post on ANY event.
+    
+    const { data: postsData, error } = await supabase
       .from('posts')
       .select(`
         id,
@@ -199,16 +202,21 @@ function FaithAdminContent() {
         repost_count,
         created_at,
         pin_order,
+        posted_as_type,
         event:events (
           id,
           title
         )
       `)
-      .in('event_id', eventIds)
       .eq('posted_as_type', 'faith_admin')
       .order('pin_order', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(50)
+
+    if (error) {
+      console.error("Error loading posts:", error)
+      return
+    }
 
     const formattedPosts = (postsData || []).map((post: any) => ({
       ...post,
@@ -262,26 +270,18 @@ function FaithAdminContent() {
   async function loadPictures() {
     const allImages: string[] = []
 
-    const { data: eventsData } = await supabase
-      .from('events')
-      .select('id')
-      .eq('creator_type', 'faith_admin')
+    // UPDATED LOGIC: Get images from posts posted BY faith_admin
+    const { data: postsData } = await supabase
+      .from('posts')
+      .select('image_urls')
+      .eq('posted_as_type', 'faith_admin')
+      .not('image_urls', 'is', null)
 
-    if (eventsData && eventsData.length > 0) {
-      const eventIds = eventsData.map(e => e.id)
-      
-      const { data: postsData } = await supabase
-        .from('posts')
-        .select('image_urls')
-        .in('event_id', eventIds)
-        .eq('posted_as_type', 'faith_admin')
-
-      postsData?.forEach(post => {
-        if (post.image_urls) {
-          allImages.push(...post.image_urls)
-        }
-      })
-    }
+    postsData?.forEach(post => {
+      if (post.image_urls && Array.isArray(post.image_urls)) {
+        allImages.push(...post.image_urls)
+      }
+    })
 
     const { data: announcementsData } = await supabase
       .from('announcements')
@@ -305,7 +305,8 @@ function FaithAdminContent() {
       }
     })
 
-    setPictures(allImages)
+    // Filter out empty strings if any
+    setPictures(allImages.filter(img => img))
   }
 
   async function togglePinPost(postId: string, currentPinOrder: number | null) {
@@ -471,10 +472,18 @@ function FaithAdminContent() {
 
   return (
     <div className="max-w-5xl mx-auto pb-10 px-4">
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        images={previewImages}
+        initialIndex={previewIndex}
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+      />
+
       {/* Header */}
       <div className="mb-6">
         <button 
-         onClick={() => router.push('/organizations')}
+         onClick={() => router.push('/organization')}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -656,7 +665,14 @@ function FaithAdminContent() {
                         'grid grid-cols-3 gap-2'
                       }`}>
                         {post.image_urls.slice(0, 3).map((url, idx) => (
-                          <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
+                          <div 
+                            key={idx} 
+                            onClick={(e) => {
+                                e.stopPropagation() // Prevent navigating to event
+                                openImagePreview(post.image_urls, idx)
+                            }}
+                            className="relative aspect-video rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity"
+                          >
                             <img src={url} alt={`Post ${idx + 1}`} className="w-full h-full object-cover" />
                             {idx === 2 && post.image_urls.length > 3 && (
                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -832,8 +848,14 @@ function FaithAdminContent() {
                     <p className="text-gray-700 mb-3 line-clamp-3">{announcement.body}</p>
 
                     {announcement.image_url && (
-                      <div className="mb-3 rounded-lg overflow-hidden">
-                        <img src={announcement.image_url} alt="Announcement" className="w-full h-48 object-cover" />
+                      <div 
+                        className="mb-3 rounded-lg overflow-hidden"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openImagePreview([announcement.image_url!], 0)
+                        }}
+                      >
+                        <img src={announcement.image_url} alt="Announcement" className="w-full h-48 object-cover hover:opacity-90 transition-opacity" />
                       </div>
                     )}
 
@@ -913,7 +935,14 @@ function FaithAdminContent() {
                         'grid grid-cols-3 gap-2'
                       }`}>
                         {bulletin.image_urls.slice(0, 3).map((url, idx) => (
-                          <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
+                          <div 
+                            key={idx} 
+                            className="relative aspect-video rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openImagePreview(bulletin.image_urls, idx)
+                            }}
+                          >
                             <img src={url} alt={`Bulletin ${idx + 1}`} className="w-full h-full object-cover" />
                             {idx === 2 && bulletin.image_urls.length > 3 && (
                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -962,6 +991,7 @@ function FaithAdminContent() {
                   <div 
                     key={idx}
                     className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:scale-105 transition-transform cursor-pointer group"
+                    onClick={() => openImagePreview(pictures, idx)}
                   >
                     <img 
                       src={url} 
