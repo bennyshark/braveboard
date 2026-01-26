@@ -1,4 +1,4 @@
-// components/feed/RepostCard.tsx - FIXED with proper loading and default avatars
+// components/feed/RepostCard.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -62,7 +62,7 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
         .from('reposts')
         .select('*')
         .eq('id', repost.id)
-        .single()
+        .maybeSingle() // Changed to maybeSingle
 
       if (repostData) {
         setReactionCount(repostData.reaction_count || 0)
@@ -77,19 +77,16 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
           .from('free_wall_posts')
           .select('*')
           .eq('id', repost.contentId)
-          .single()
+          .maybeSingle() // Changed to maybeSingle
 
-        if (error) {
-          console.error('Error loading free wall post:', error)
-        }
+        if (error) console.error('Error loading free wall post:', error)
 
         if (data) {
-          // Load author separately
           const { data: authorData } = await supabase
             .from('profiles')
             .select('id, first_name, last_name, avatar_url')
             .eq('id', data.author_id)
-            .single()
+            .maybeSingle()
 
           setOriginalContent({
             type: 'free_wall_post',
@@ -105,23 +102,24 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
           })
         }
       } else if (repost.contentType === 'post') {
+        // --- FIX HERE: Used maybeSingle() instead of single() ---
         const { data, error } = await supabase
           .from('posts')
           .select('*')
           .eq('id', repost.contentId)
-          .single()
+          .maybeSingle() 
 
         if (error) {
+          // Only log real errors, not "not found"
           console.error('Error loading post:', error)
         }
 
         if (data) {
-          // Load author separately
           const { data: authorData } = await supabase
             .from('profiles')
             .select('id, first_name, last_name, avatar_url')
             .eq('id', data.author_id)
-            .single()
+            .maybeSingle()
 
           setOriginalContent({
             type: 'post',
@@ -141,11 +139,9 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
           .from('bulletins')
           .select('*')
           .eq('id', repost.contentId)
-          .single()
+          .maybeSingle() // Changed to maybeSingle
 
-        if (error) {
-          console.error('Error loading bulletin:', error)
-        }
+        if (error) console.error('Error loading bulletin:', error)
 
         if (data) {
           let creatorName = "Unknown"
@@ -156,12 +152,11 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
             creatorName = "FAITH Administration"
             creatorType = "faith"
           } else if (data.creator_type === 'organization' && data.creator_org_id) {
-            // Load org data separately
             const { data: orgData } = await supabase
               .from('organizations')
               .select('id, name, avatar_url')
               .eq('id', data.creator_org_id)
-              .single()
+              .maybeSingle()
 
             if (orgData) {
               creatorName = orgData.name
@@ -189,11 +184,9 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
           .from('announcements')
           .select('*')
           .eq('id', repost.contentId)
-          .single()
+          .maybeSingle() // Changed to maybeSingle
 
-        if (error) {
-          console.error('Error loading announcement:', error)
-        }
+        if (error) console.error('Error loading announcement:', error)
 
         if (data) {
           let creatorName = "Unknown"
@@ -204,12 +197,11 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
             creatorName = "FAITH Administration"
             creatorType = "faith"
           } else if (data.creator_type === 'organization' && data.creator_org_id) {
-            // Load org data separately
             const { data: orgData } = await supabase
               .from('organizations')
               .select('id, name, avatar_url')
               .eq('id', data.creator_org_id)
-              .single()
+              .maybeSingle()
 
             if (orgData) {
               creatorName = orgData.name
@@ -233,24 +225,20 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
           })
         }
       } else if (repost.contentType === 'repost') {
-        // Nested repost - load the repost data
         const { data, error } = await supabase
           .from('reposts')
           .select('*')
           .eq('id', repost.contentId)
-          .single()
+          .maybeSingle() // Changed to maybeSingle
 
-        if (error) {
-          console.error('Error loading nested repost:', error)
-        }
+        if (error) console.error('Error loading nested repost:', error)
 
         if (data) {
-          // Load reposter separately
           const { data: reposterData } = await supabase
             .from('profiles')
             .select('id, first_name, last_name, avatar_url')
             .eq('id', data.user_id)
-            .single()
+            .maybeSingle()
 
           setOriginalContent({
             type: 'repost',
