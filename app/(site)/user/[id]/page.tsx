@@ -1,14 +1,14 @@
-// app/(site)/user/[id]/page.tsx
 "use client"
 
 import { useState, useEffect, useRef } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { useParams, useRouter } from "next/navigation"
 import { 
-  User, Mail, BookOpen, Building2, Shield, Users, Loader2, AlertCircle,
-  Calendar, MessageSquare, Heart, ArrowLeft, Clock, Image as ImageIcon,
+  Mail, BookOpen, Building2, Shield, Users, Loader2, AlertCircle,
+  Calendar, MessageSquare, Heart, ArrowLeft, Clock, Image,
   LayoutGrid, Repeat2, AtSign, Pin
 } from "lucide-react"
+import { ImagePreviewModal } from "@/components/feed/ImagePreviewModal"
 
 type UserProfile = {
   id: string
@@ -47,8 +47,8 @@ type UserOrganization = {
 
 type FeedPost = {
   id: string
-  type: 'post' | 'repost' | 'tagged'
-  event_id: string
+  type: 'post' | 'free_wall_post' | 'repost' | 'tagged'
+  event_id?: string | null
   content: string
   image_urls: string[]
   likes: number
@@ -56,16 +56,20 @@ type FeedPost = {
   reaction_count: number
   created_at: string
   pinned_to_profile: boolean
-  event: {
+  pinned_at: string | null
+  event?: {
     id: string
     title: string
-  }
+  } | null
   repost_comment?: string
   reposted_by?: string
   tagged_by?: string
+  repost_id?: string
+  tag_id?: string
+  content_type?: string
 }
 
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10
 
 export default function UserProfilePage() {
   const params = useParams()
@@ -77,19 +81,22 @@ export default function UserProfilePage() {
   const [course, setCourse] = useState<Course | null>(null)
   const [organizations, setOrganizations] = useState<UserOrganization[]>([])
   const [stats, setStats] = useState({
-    interactions: 0,
+    eventsCreated: 0,
     postsCreated: 0,
-    eventsParticipated: 0
+    interactions: 0
   })
   const [loading, setLoading] = useState(true)
   const [isCurrentUser, setIsCurrentUser] = useState(false)
 
-  // Feed filter state
   const [activeFilter, setActiveFilter] = useState<'feed' | 'posts' | 'reposts' | 'tagged'>('feed')
   const [feedItems, setFeedItems] = useState<FeedPost[]>([])
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
+  
+  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -106,7 +113,6 @@ export default function UserProfilePage() {
     }
   }, [activeFilter, profile, isCurrentUser])
 
-  // Infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
       entries => {
@@ -128,7 +134,6 @@ export default function UserProfilePage() {
     try {
       setLoading(true)
 
-      // Check if viewing own profile
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id === userId) {
         setIsCurrentUser(true)
@@ -183,47 +188,31 @@ export default function UserProfilePage() {
         setOrganizations(orgsData as any)
       }
 
-      // Calculate stats
+      const { count: eventsCount } = await supabase
+        .from('events')
+        .select('*', { count: 'exact', head: true })
+        .eq('created_by', userId)
+
       const { count: postsCount } = await supabase
         .from('posts')
         .select('*', { count: 'exact', head: true })
         .eq('author_id', userId)
+        .not('posted_as_type', 'in', '(organization,faith_admin)')
 
-      // Count comments + replies by user
+      const { count: freeWallCount } = await supabase
+        .from('free_wall_posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('author_id', userId)
+
       const { count: commentsCount } = await supabase
         .from('comments')
         .select('*', { count: 'exact', head: true })
         .eq('author_id', userId)
 
-      // Count events user is participating in
-      const { data: participantEvents } = await supabase
-        .from('events')
-        .select('id, participant_type, participant_orgs, participant_depts, participant_courses')
-
-      let eventsCount = 0
-      if (participantEvents && profileData) {
-        for (const event of participantEvents) {
-          if (event.participant_type === 'public') {
-            eventsCount++
-          } else {
-            // Check if user is in participant lists
-            const userOrgIds = orgsData?.map((o: any) => o.organization.id) || []
-            
-            if (event.participant_orgs?.some((id: string) => userOrgIds.includes(id))) {
-              eventsCount++
-            } else if (event.participant_depts?.includes(profileData.department_code)) {
-              eventsCount++
-            } else if (event.participant_courses?.includes(profileData.course_code)) {
-              eventsCount++
-            }
-          }
-        }
-      }
-
       setStats({
-        interactions: commentsCount || 0,
-        postsCreated: postsCount || 0,
-        eventsParticipated: eventsCount
+        eventsCreated: eventsCount || 0,
+        postsCreated: (postsCount || 0) + (freeWallCount || 0),
+        interactions: commentsCount || 0
       })
 
     } catch (error) {
@@ -244,12 +233,10 @@ export default function UserProfilePage() {
     setLoadingMore(true)
 
     try {
-      const offset = reset ? 0 : feedItems.length
       let items: FeedPost[] = []
 
       if (activeFilter === 'posts' || activeFilter === 'feed') {
-        // Load user's posts
-        const { data: postsData } = await supabase
+        const { data: postsData, error: postsError } = await supabase
           .from('posts')
           .select(`
             id,
@@ -261,30 +248,80 @@ export default function UserProfilePage() {
             reaction_count,
             created_at,
             pinned_to_profile,
+            pinned_at,
             event:events (
               id,
               title
             )
           `)
           .eq('author_id', profile.id)
+          .not('posted_as_type', 'in', '(organization,faith_admin)')
           .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-          .range(offset, offset + ITEMS_PER_PAGE - 1)
 
-        if (postsData) {
-          items = [...items, ...postsData.map((p: any) => ({
-            ...p,
+        if (postsError) {
+          console.error('Error loading posts:', postsError)
+        }
+
+        if (postsData && postsData.length > 0) {
+          const mappedPosts = postsData.map((p: any) => ({
+            id: p.id,
             type: 'post' as const,
+            event_id: p.event_id,
+            content: p.content,
+            image_urls: p.image_urls || [],
             likes: p.likes || 0,
             comments: p.comments || 0,
             reaction_count: p.reaction_count || 0,
+            created_at: p.created_at,
+            pinned_to_profile: p.pinned_to_profile || false,
+            pinned_at: p.pinned_at || null,
             event: Array.isArray(p.event) ? p.event[0] : p.event
-          }))]
+          }))
+          items = [...items, ...mappedPosts]
+        }
+
+        const { data: freeWallData, error: freeWallError } = await supabase
+          .from('free_wall_posts')
+          .select(`
+            id,
+            content,
+            image_urls,
+            comments,
+            reaction_count,
+            repost_count,
+            created_at,
+            pinned_to_profile,
+            pinned_at
+          `)
+          .eq('author_id', profile.id)
+          .order('pinned_to_profile', { ascending: false })
+          .order('created_at', { ascending: false })
+
+        if (freeWallError) {
+          console.error('Error loading free wall posts:', freeWallError)
+        }
+
+        if (freeWallData && freeWallData.length > 0) {
+          const mappedFreeWall = freeWallData.map((p: any) => ({
+            id: p.id,
+            type: 'free_wall_post' as const,
+            event_id: null,
+            content: p.content,
+            image_urls: p.image_urls || [],
+            likes: 0,
+            comments: parseInt(p.comments) || 0,
+            reaction_count: parseInt(p.reaction_count) || 0,
+            created_at: p.created_at,
+            pinned_to_profile: p.pinned_to_profile === true || p.pinned_to_profile === 'true',
+            pinned_at: p.pinned_at || null,
+            event: null
+          }))
+          items = [...items, ...mappedFreeWall]
         }
       }
 
       if (activeFilter === 'reposts' || activeFilter === 'feed') {
-        // Load user's reposts
         const { data: repostsData } = await supabase
           .from('reposts')
           .select(`
@@ -292,63 +329,87 @@ export default function UserProfilePage() {
             content_id,
             content_type,
             repost_comment,
-            created_at
+            created_at,
+            pinned_to_profile,
+            pinned_at
           `)
           .eq('user_id', profile.id)
-          .eq('content_type', 'post')
+          .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-          .range(offset, offset + ITEMS_PER_PAGE - 1)
 
         if (repostsData && repostsData.length > 0) {
-          const postIds = repostsData.map(r => r.content_id)
-          const { data: postsData } = await supabase
-            .from('posts')
-            .select(`
-              id,
-              event_id,
-              content,
-              image_urls,
-              likes,
-              comments,
-              reaction_count,
-              created_at,
-              event:events (
-                id,
-                title
-              )
-            `)
-            .in('id', postIds)
-
-          if (postsData) {
-            const repostItems = repostsData.map(repost => {
-              const post = postsData.find((p: any) => p.id === repost.content_id)
-              if (!post) return null
-              
-              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
-              
-              return {
-                id: post.id,
-                type: 'repost' as const,
-                event_id: post.event_id,
-                content: post.content,
-                image_urls: post.image_urls || [],
-                likes: post.likes || 0,
-                comments: post.comments || 0,
-                reaction_count: post.reaction_count || 0,
-                created_at: repost.created_at,
-                pinned_to_profile: false,
-                event: eventData || { id: post.event_id, title: 'Unknown Event' },
-                repost_comment: repost.repost_comment
-              }
-            }).filter(item => item !== null) as FeedPost[]
+          for (const repost of repostsData) {
+            let contentData = null
             
-            items = [...items, ...repostItems]
+            if (repost.content_type === 'post') {
+              const { data } = await supabase
+                .from('posts')
+                .select(`
+                  id,
+                  event_id,
+                  content,
+                  image_urls,
+                  likes,
+                  comments,
+                  reaction_count,
+                  created_at,
+                  event:events (
+                    id,
+                    title
+                  )
+                `)
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            } else if (repost.content_type === 'free_wall_post') {
+              const { data } = await supabase
+                .from('free_wall_posts')
+                .select('*')
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            } else if (repost.content_type === 'bulletin') {
+              const { data } = await supabase
+                .from('bulletins')
+                .select('*')
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            } else if (repost.content_type === 'announcement') {
+              const { data } = await supabase
+                .from('announcements')
+                .select('*')
+                .eq('id', repost.content_id)
+                .single()
+              contentData = data
+            }
+
+            if (contentData) {
+              const eventData = contentData.event ? (Array.isArray(contentData.event) ? contentData.event[0] : contentData.event) : null
+              
+              items.push({
+                id: contentData.id,
+                repost_id: repost.id,
+                type: 'repost' as const,
+                event_id: contentData.event_id || null,
+                content: contentData.content || contentData.body || '',
+                image_urls: contentData.image_urls || [],
+                likes: contentData.likes || 0,
+                comments: contentData.comments || 0,
+                reaction_count: contentData.reaction_count || 0,
+                created_at: repost.created_at,
+                pinned_to_profile: repost.pinned_to_profile || false,
+                pinned_at: repost.pinned_at || null,
+                event: eventData,
+                repost_comment: repost.repost_comment,
+                content_type: repost.content_type
+              })
+            }
           }
         }
       }
 
       if (activeFilter === 'tagged' || activeFilter === 'feed') {
-        // Load posts where user is tagged
         const { data: tagsData } = await supabase
           .from('tags')
           .select(`
@@ -356,78 +417,171 @@ export default function UserProfilePage() {
             content_id,
             content_type,
             tagged_by_user_id,
-            created_at
+            created_at,
+            pinned_to_profile,
+            pinned_at
           `)
           .eq('tagged_user_id', profile.id)
-          .eq('content_type', 'post')
+          .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-          .range(offset, offset + ITEMS_PER_PAGE - 1)
 
         if (tagsData && tagsData.length > 0) {
-          const postIds = tagsData.map(t => t.content_id)
-          const { data: postsData } = await supabase
-            .from('posts')
-            .select(`
-              id,
-              event_id,
-              content,
-              image_urls,
-              likes,
-              comments,
-              reaction_count,
-              created_at,
-              event:events (
-                id,
-                title
-              )
-            `)
-            .in('id', postIds)
-
-          if (postsData) {
-            const taggedItems = tagsData.map(tag => {
-              const post = postsData.find((p: any) => p.id === tag.content_id)
-              if (!post) return null
-              
-              const eventData = Array.isArray(post.event) ? post.event[0] : post.event
-              
-              return {
-                id: post.id,
-                type: 'tagged' as const,
-                event_id: post.event_id,
-                content: post.content,
-                image_urls: post.image_urls || [],
-                likes: post.likes || 0,
-                comments: post.comments || 0,
-                reaction_count: post.reaction_count || 0,
-                created_at: tag.created_at,
-                pinned_to_profile: false,
-                event: eventData || { id: post.event_id, title: 'Unknown Event' }
-              }
-            }).filter(item => item !== null) as FeedPost[]
+          for (const tag of tagsData) {
+            let contentData = null
             
-            items = [...items, ...taggedItems]
+            if (tag.content_type === 'post') {
+              const { data } = await supabase
+                .from('posts')
+                .select(`
+                  id,
+                  event_id,
+                  content,
+                  image_urls,
+                  likes,
+                  comments,
+                  reaction_count,
+                  created_at,
+                  event:events (
+                    id,
+                    title
+                  )
+                `)
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'free_wall_post') {
+              const { data } = await supabase
+                .from('free_wall_posts')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'bulletin') {
+              const { data } = await supabase
+                .from('bulletins')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'announcement') {
+              const { data } = await supabase
+                .from('announcements')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            } else if (tag.content_type === 'repost') {
+              const { data } = await supabase
+                .from('reposts')
+                .select('*')
+                .eq('id', tag.content_id)
+                .single()
+              contentData = data
+            }
+
+            if (contentData) {
+              const eventData = contentData.event ? (Array.isArray(contentData.event) ? contentData.event[0] : contentData.event) : null
+              
+              items.push({
+                id: contentData.id,
+                tag_id: tag.id,
+                type: 'tagged' as const,
+                event_id: contentData.event_id || null,
+                content: contentData.content || contentData.body || '',
+                image_urls: contentData.image_urls || [],
+                likes: contentData.likes || 0,
+                comments: contentData.comments || 0,
+                reaction_count: contentData.reaction_count || 0,
+                created_at: tag.created_at,
+                pinned_to_profile: tag.pinned_to_profile || false,
+                pinned_at: tag.pinned_at || null,
+                event: eventData,
+                content_type: tag.content_type
+              })
+            }
           }
         }
       }
 
-      // Sort by created_at for feed
-      if (activeFilter === 'feed') {
-        items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      }
+      items.sort((a, b) => {
+        if (a.pinned_to_profile && b.pinned_to_profile) {
+          const aPinnedAt = a.pinned_at ? new Date(a.pinned_at).getTime() : 0
+          const bPinnedAt = b.pinned_at ? new Date(b.pinned_at).getTime() : 0
+          return bPinnedAt - aPinnedAt
+        }
+        
+        if (a.pinned_to_profile && !b.pinned_to_profile) return -1
+        if (!a.pinned_to_profile && b.pinned_to_profile) return 1
+        
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      })
 
-      // Remove duplicates
-      const uniqueItems = items.filter((item, index, self) => 
-        index === self.findIndex(t => t.id === item.id && t.type === item.type)
+      const currentLength = reset ? 0 : feedItems.length
+      const startIndex = currentLength
+      const endIndex = startIndex + ITEMS_PER_PAGE
+      const paginatedItems = items.slice(startIndex, endIndex)
+
+      const uniqueItems = paginatedItems.filter((item, index, self) => 
+        index === self.findIndex(t => 
+          t.id === item.id && 
+          t.type === item.type &&
+          (t.repost_id === item.repost_id || (!t.repost_id && !item.repost_id)) &&
+          (t.tag_id === item.tag_id || (!t.tag_id && !item.tag_id))
+        )
       )
 
       const newItems = reset ? uniqueItems : [...feedItems, ...uniqueItems]
       setFeedItems(newItems)
-      setHasMore(uniqueItems.length === ITEMS_PER_PAGE)
+      setHasMore(endIndex < items.length)
 
     } catch (error) {
       console.error('Error loading feed items:', error)
     } finally {
       setLoadingMore(false)
+    }
+  }
+
+  function openImagePreview(images: string[], index: number) {
+    setPreviewImages(images)
+    setPreviewIndex(index)
+    setPreviewOpen(true)
+  }
+
+  function handleItemClick(item: FeedPost, e: React.MouseEvent) {
+    if ((e.target as HTMLElement).closest('.image-preview')) {
+      return
+    }
+
+    if (item.type === 'post' && item.event_id) {
+      router.push(`/event/${item.event_id}?scrollTo=${item.id}`)
+    } else if (item.type === 'free_wall_post') {
+      router.push(`/home?tab=free_wall&scrollTo=${item.id}`)
+    } else if (item.type === 'repost' && item.content_type) {
+      if (item.content_type === 'post' && item.event_id) {
+        router.push(`/event/${item.event_id}?scrollTo=${item.id}`)
+      } else {
+        const tabMap: Record<string, string> = {
+          'post': 'events',
+          'free_wall_post': 'free_wall',
+          'bulletin': 'bulletin',
+          'announcement': 'announcements'
+        }
+        const tab = tabMap[item.content_type] || 'free_wall'
+        router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
+      }
+    } else if (item.type === 'tagged' && item.content_type) {
+      if (item.content_type === 'post' && item.event_id) {
+        router.push(`/event/${item.event_id}?scrollTo=${item.id}`)
+      } else {
+        const tabMap: Record<string, string> = {
+          'post': 'events',
+          'free_wall_post': 'free_wall',
+          'bulletin': 'bulletin',
+          'announcement': 'announcements'
+        }
+        const tab = tabMap[item.content_type] || 'free_wall'
+        router.push(`/home?tab=${tab}&scrollTo=${item.id}`)
+      }
     }
   }
 
@@ -487,8 +641,15 @@ export default function UserProfilePage() {
     }
   }
 
-  const handlePostClick = (eventId: string) => {
-    router.push(`/event/${eventId}`)
+  const getContentTypeLabel = (contentType: string | undefined) => {
+    switch(contentType) {
+      case 'post': return 'Post'
+      case 'free_wall_post': return 'Free Wall'
+      case 'bulletin': return 'Bulletin'
+      case 'announcement': return 'Announcement'
+      case 'repost': return 'Repost'
+      default: return ''
+    }
   }
 
   const feedFilters = [
@@ -528,18 +689,25 @@ export default function UserProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4">
-      {/* Header */}
+      <ImagePreviewModal
+        images={previewImages}
+        initialIndex={previewIndex}
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+      />
+
       <div className="mb-8">
-        <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 mb-4 hover:text-gray-900">
+        <button 
+          onClick={() => router.back()} 
+          className="flex items-center gap-2 text-gray-600 mb-4 hover:text-gray-900 transition-colors"
+        >
           <ArrowLeft className="h-5 w-5" /> Back
         </button>
         <h1 className="text-3xl font-black text-gray-900 mb-2">{getFullName()}'s Profile</h1>
         <p className="text-gray-600">View user information</p>
       </div>
 
-      {/* Main Profile Card */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
-        {/* Cover Area */}
         <div className="relative h-32 bg-gradient-to-r from-blue-500 to-blue-600">
           {profile.cover_url && (
             <img 
@@ -550,11 +718,9 @@ export default function UserProfilePage() {
           )}
         </div>
         
-        {/* Profile Info */}
         <div className="px-8 pb-8">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-16 mb-6">
             <div className="flex items-end gap-4">
-              {/* Avatar */}
               <div className="relative">
                 {profile.avatar_url ? (
                   <img 
@@ -578,7 +744,6 @@ export default function UserProfilePage() {
                 )}
               </div>
 
-              {/* Name & Email */}
               <div className="mb-2">
                 <h2 className="text-2xl font-black text-gray-900">{getFullName()}</h2>
                 <p className="text-gray-600 text-sm">{profile.email}</p>
@@ -586,7 +751,6 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          {/* Bio Section */}
           {profile.bio_content && (
             <div className="mb-6 p-4 bg-gray-50 rounded-xl">
               <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
@@ -595,28 +759,26 @@ export default function UserProfilePage() {
             </div>
           )}
 
-          {/* Stats Section */}
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 text-center">
-              <MessageSquare className="h-6 w-6 text-blue-600 mx-auto mb-2" />
-              <p className="text-2xl font-black text-blue-900">{stats.interactions}</p>
-              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Interactions</p>
+              <Calendar className="h-6 w-6 text-blue-600 mx-auto mb-2" />
+              <p className="text-2xl font-black text-blue-900">{stats.eventsCreated}</p>
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Events Created</p>
             </div>
             
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 text-center">
-              <Heart className="h-6 w-6 text-purple-600 mx-auto mb-2" />
+              <MessageSquare className="h-6 w-6 text-purple-600 mx-auto mb-2" />
               <p className="text-2xl font-black text-purple-900">{stats.postsCreated}</p>
               <p className="text-xs font-bold text-purple-700 uppercase tracking-wide">Posts Created</p>
             </div>
             
             <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 text-center">
-              <Calendar className="h-6 w-6 text-orange-600 mx-auto mb-2" />
-              <p className="text-2xl font-black text-orange-900">{stats.eventsParticipated}</p>
-              <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Events</p>
+              <Heart className="h-6 w-6 text-orange-600 mx-auto mb-2" />
+              <p className="text-2xl font-black text-orange-900">{stats.interactions}</p>
+              <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Interactions</p>
             </div>
           </div>
 
-          {/* Info Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
               <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -655,7 +817,6 @@ export default function UserProfilePage() {
         </div>
       </div>
 
-      {/* Organizations */}
       {organizations.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
           <div className="flex items-center gap-2 mb-4">
@@ -670,7 +831,7 @@ export default function UserProfilePage() {
             {organizations.map((org, index) => (
               <div 
                 key={index}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-xl"
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center">
@@ -692,7 +853,6 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* Feed Filters */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -721,26 +881,32 @@ export default function UserProfilePage() {
           })}
         </div>
 
-        {/* Feed Items */}
         <div className="space-y-3">
           {feedItems.map((item) => (
             <div 
-              key={`${item.type}-${item.id}`}
-              onClick={() => handlePostClick(item.event_id)}
-              className="p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer group"
+              key={`${item.type}-${item.id}-${item.repost_id || ''}-${item.tag_id || ''}`}
+              onClick={(e) => handleItemClick(item, e)}
+              className={`p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group ${
+                item.event_id || item.type === 'free_wall_post' || item.type === 'repost' || item.type === 'tagged' ? 'cursor-pointer' : ''
+              }`}
             >
-              {/* Type Badge */}
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 {item.type === 'repost' && (
                   <span className="flex items-center gap-1 text-xs text-green-600 font-bold">
                     <Repeat2 className="h-3 w-3" />
-                    Reposted
+                    Reposted {item.content_type && `• ${getContentTypeLabel(item.content_type)}`}
                   </span>
                 )}
                 {item.type === 'tagged' && (
                   <span className="flex items-center gap-1 text-xs text-purple-600 font-bold">
                     <AtSign className="h-3 w-3" />
-                    Tagged
+                    Tagged {item.content_type && `• ${getContentTypeLabel(item.content_type)}`}
+                  </span>
+                )}
+                {item.type === 'free_wall_post' && (
+                  <span className="flex items-center gap-1 text-xs text-orange-600 font-bold">
+                    <MessageSquare className="h-3 w-3" />
+                    Free Wall Post
                   </span>
                 )}
                 {item.pinned_to_profile && (
@@ -751,7 +917,6 @@ export default function UserProfilePage() {
                 )}
               </div>
 
-              {/* Repost Comment */}
               {item.type === 'repost' && item.repost_comment && (
                 <div className="mb-2 p-2 bg-white rounded-lg border-l-4 border-green-500">
                   <p className="text-sm text-gray-700 italic">{item.repost_comment}</p>
@@ -760,16 +925,21 @@ export default function UserProfilePage() {
 
               <div className="flex items-start gap-3 mb-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
-                    {item.event?.title || 'Event'}
-                  </p>
-                  <p className="text-sm text-gray-800 line-clamp-2 mb-2">{item.content}</p>
+                  {item.event && item.event.title && (
+                    <p className="text-xs font-bold text-blue-600 mb-1 group-hover:text-blue-700">
+                      {item.event.title}
+                    </p>
+                  )}
+                  {item.content && (
+                    <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap mb-2">
+                      {item.content}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Image Grid */}
-              {item.image_urls.length > 0 && (
-                <div className={`mb-3 ${
+              {item.image_urls && item.image_urls.length > 0 && (
+                <div className={`mb-3 image-preview ${
                   item.image_urls.length === 1 ? 'grid grid-cols-1' :
                   item.image_urls.length === 2 ? 'grid grid-cols-2 gap-2' :
                   item.image_urls.length === 3 ? 'grid grid-cols-3 gap-2' :
@@ -778,7 +948,11 @@ export default function UserProfilePage() {
                   {item.image_urls.slice(0, 4).map((url, idx) => (
                     <div 
                       key={idx} 
-                      className={`relative overflow-hidden rounded-lg bg-gray-200 ${
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openImagePreview(item.image_urls, idx)
+                      }}
+                      className={`relative overflow-hidden rounded-lg bg-gray-200 cursor-pointer hover:opacity-90 transition-opacity ${
                         item.image_urls.length === 1 ? 'aspect-video col-span-1' :
                         item.image_urls.length === 3 && idx === 0 ? 'aspect-video col-span-2' :
                         'aspect-square'
@@ -816,11 +990,11 @@ export default function UserProfilePage() {
                   <MessageSquare className="h-3 w-3" />
                   {item.comments}
                 </span>
-                {item.image_urls.length > 0 && (
+                {item.image_urls && item.image_urls.length > 0 && (
                   <>
                     <span>•</span>
                     <span className="flex items-center gap-1">
-                      <ImageIcon className="h-3 w-3" />
+                      <Image className="h-3 w-3" />
                       {item.image_urls.length}
                     </span>
                   </>
@@ -829,17 +1003,14 @@ export default function UserProfilePage() {
             </div>
           ))}
 
-          {/* Loading More */}
           {loadingMore && (
             <div className="flex justify-center py-4">
               <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
             </div>
           )}
 
-          {/* Observer Target */}
           <div ref={observerTarget} className="h-4" />
 
-          {/* No Items */}
           {!loadingMore && feedItems.length === 0 && (
             <div className="text-center py-12 text-gray-500">
               <p className="font-medium">No {activeFilter} found</p>
