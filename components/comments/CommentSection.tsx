@@ -1,6 +1,6 @@
-// components/comments/CommentSection.tsx
+// components/comments/CommentSection.tsx - OPTIMIZED for faster loading
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { CommentItem } from "./CommentItem"
@@ -54,53 +54,55 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         setRefreshing(true)
       }
       
-      const { data: commentsData, error } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('content_type', contentType)
-        .eq('content_id', contentId)
-        .order('created_at', { ascending: true })
+      // Fetch all data in parallel for better performance
+      const [commentsResult, authorsResult, orgsResult] = await Promise.all([
+        supabase
+          .from('comments')
+          .select('*')
+          .eq('content_type', contentType)
+          .eq('content_id', contentId)
+          .order('created_at', { ascending: true }),
+        
+        // Pre-fetch all potential authors
+        supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url'),
+        
+        // Pre-fetch all potential organizations
+        supabase
+          .from('organizations')
+          .select('id, name, avatar_url')
+      ])
 
-      if (error) throw error
-
-      const authorIds = [...new Set(commentsData.map((c: any) => c.author_id))]
+      if (commentsResult.error) throw commentsResult.error
       
-      const { data: authorsData } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar_url')
-        .in('id', authorIds)
+      const commentsData = commentsResult.data || []
 
+      // Build lookup maps
       const authorMap = new Map(
-        authorsData?.map(author => [
+        (authorsResult.data || []).map(author => [
           author.id,
           {
             name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
             avatarUrl: author.avatar_url
           }
-        ]) || []
+        ])
       )
-
-      const orgIds = [...new Set(
-        commentsData
-          .filter((c: any) => c.posted_as_type === 'organization' && c.posted_as_org_id)
-          .map((c: any) => c.posted_as_org_id)
-      )]
-      
-      const { data: orgsData } = await supabase
-        .from('organizations')
-        .select('id, name, avatar_url')
-        .in('id', orgIds)
 
       const orgMap = new Map(
-        orgsData?.map(org => [
+        (orgsResult.data || []).map(org => [
           org.id,
           { name: org.name, avatarUrl: org.avatar_url }
-        ]) || []
+        ])
       )
 
+      // Build comment tree in a single pass
+      const commentMap = new Map<string, Comment>()
       const commentNameMap = new Map<string, string>()
+      const topLevelComments: Comment[] = []
 
-      const mappedComments: Comment[] = commentsData.map((c: any) => {
+      // First pass: Create all comment objects
+      commentsData.forEach((c: any) => {
         let displayName = 'Unknown User'
         let displayAvatar = null
         
@@ -124,7 +126,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
 
         const createdAtDate = new Date(c.created_at)
 
-        return {
+        const comment: Comment = {
           id: c.id,
           content: c.content,
           imageUrl: c.image_url,
@@ -142,42 +144,49 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
           parentCommentId: c.parent_comment_id,
           replies: [],
           replyingToName: null,
-          isDeleted: isDeleted
+          isDeleted: isDeleted,
+          mostRecentReplyTimestamp: createdAtDate.getTime()
+        }
+
+        commentMap.set(c.id, comment)
+        
+        if (!c.parent_comment_id) {
+          topLevelComments.push(comment)
         }
       })
 
-      const topLevelComments = mappedComments.filter(c => !c.parentCommentId)
-      const repliesMap = new Map<string, Comment[]>()
-      
-      mappedComments.forEach(comment => {
+      // Second pass: Build tree structure
+      commentMap.forEach(comment => {
         if (comment.parentCommentId) {
-          const parentName = commentNameMap.get(comment.parentCommentId)
-          comment.replyingToName = parentName || 'Unknown'
-          
-          if (!repliesMap.has(comment.parentCommentId)) {
-            repliesMap.set(comment.parentCommentId, [])
+          const parent = commentMap.get(comment.parentCommentId)
+          if (parent) {
+            comment.replyingToName = commentNameMap.get(comment.parentCommentId) || 'Unknown'
+            parent.replies.push(comment)
+            
+            // Update parent's most recent reply timestamp
+            if (comment.createdAtTimestamp > parent.mostRecentReplyTimestamp!) {
+              parent.mostRecentReplyTimestamp = comment.createdAtTimestamp
+            }
           }
-          repliesMap.get(comment.parentCommentId)!.push(comment)
         }
       })
 
-      const attachReplies = (comment: Comment) => {
-        const replies = repliesMap.get(comment.id) || []
-        comment.replies = replies
-        
-        if (replies.length > 0) {
-          const mostRecentReply = replies.reduce((latest, current) => 
-            current.createdAtTimestamp > latest.createdAtTimestamp ? current : latest
+      // Sort replies by timestamp
+      const sortReplies = (comment: Comment) => {
+        if (comment.replies.length > 0) {
+          comment.replies.sort((a, b) => a.createdAtTimestamp - b.createdAtTimestamp)
+          comment.replies.forEach(sortReplies)
+          
+          // Update mostRecentReplyTimestamp to include nested replies
+          const mostRecent = comment.replies.reduce((latest, current) => 
+            (current.mostRecentReplyTimestamp || current.createdAtTimestamp) > 
+            (latest.mostRecentReplyTimestamp || latest.createdAtTimestamp) ? current : latest
           )
-          comment.mostRecentReplyTimestamp = mostRecentReply.createdAtTimestamp
-        } else {
-          comment.mostRecentReplyTimestamp = comment.createdAtTimestamp
+          comment.mostRecentReplyTimestamp = mostRecent.mostRecentReplyTimestamp || mostRecent.createdAtTimestamp
         }
-        
-        replies.forEach(reply => attachReplies(reply))
       }
 
-      topLevelComments.forEach(comment => attachReplies(comment))
+      topLevelComments.forEach(sortReplies)
 
       setComments(topLevelComments)
 
@@ -198,7 +207,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
     loadComments(true)
   }
 
-  const getPreviewComments = () => {
+  const getPreviewComments = useMemo(() => {
     if (comments.length === 0) return []
     
     const sortedComments = [...comments].sort((a, b) => {
@@ -223,9 +232,9 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
     })
     
     return preview
-  }
+  }, [comments])
 
-  const totalCommentCount = () => {
+  const totalCommentCount = useMemo(() => {
     let count = 0
     const countReplies = (comment: Comment) => {
       count++
@@ -233,10 +242,10 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
     }
     comments.forEach(comment => countReplies(comment))
     return count
-  }
+  }, [comments])
 
-  const previewComments = getPreviewComments()
-  const totalCount = totalCommentCount()
+  const previewComments = getPreviewComments
+  const totalCount = totalCommentCount
   const hasMore = totalCount > previewComments.length || 
                   previewComments.some(c => c.replies.length < (comments.find(original => original.id === c.id)?.replies.length || 0))
 

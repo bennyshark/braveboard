@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - Complete with TaggedUsersDisplay
+// components/feed/PostCard.tsx - OPTIMIZED with pre-fetched data support
 "use client"
 
 import { useState, useEffect } from "react"
@@ -32,31 +32,52 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const pathname = usePathname()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
-  const [showComments, setShowComments] = useState(true)
+  const [showComments, setShowComments] = useState(false)
+  
+  // OPTIMIZED: Use prop data if available, otherwise fetch
   const [commentCount, setCommentCount] = useState(post.comments)
-  const [reactionCount, setReactionCount] = useState(0)
-  const [repostCount, setRepostCount] = useState(0)
+  const [reactionCount, setReactionCount] = useState(post.reactionCount || 0)
+  const [repostCount, setRepostCount] = useState(post.repostCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>({
-    type: 'user',
-    name: post.author,
-    avatarUrl: post.avatarUrl
-  })
-  const [loading, setLoading] = useState(true)
-  const [postEventId, setPostEventId] = useState<string | null>(eventId || null)
-  const [editedAt, setEditedAt] = useState<string | null>(null)
-  const [pinOrder, setPinOrder] = useState<number | null>(null)
+  const [editedAt, setEditedAt] = useState<string | null>(post.editedAt || null)
+  const [pinOrder, setPinOrder] = useState<number | null>(post.pinOrder || null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
+  
+  // OPTIMIZED: Initialize with prop data
+  const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>(() => {
+    // If we have pre-fetched data, use it immediately
+    if (post.postedAsType === 'faith_admin') {
+      return {
+        type: 'faith_admin',
+        name: 'FAITH Administration',
+        avatarUrl: null
+      }
+    } else if (post.postedAsType === 'organization') {
+      return {
+        type: 'organization',
+        name: post.author, // Already resolved in parent
+        avatarUrl: post.avatarUrl
+      }
+    }
+    return {
+      type: 'user',
+      name: post.author,
+      avatarUrl: post.avatarUrl
+    }
+  })
+  
+  const [loading, setLoading] = useState(false) // Start as not loading since we have data
+  const [postEventId, setPostEventId] = useState<string | null>(eventId || null)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // Check if we're on the event page
   const isOnEventPage = pathname?.startsWith('/event/')
 
+  // OPTIMIZED: Only fetch if we don't have pre-fetched data
   const loadPostData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -79,39 +100,43 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
         setPostEventId(postData.event_id)
       }
 
+      // Update counts
       setCommentCount(postData.comments || 0)
       setReactionCount(postData.reaction_count || 0)
       setRepostCount(postData.repost_count || 0)
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
-      if (postData.posted_as_type === 'user') {
-        setDisplayIdentity({
-          type: 'user',
-          name: post.author,
-          avatarUrl: post.avatarUrl
-        })
-      }
-      else if (postData.posted_as_type === 'faith_admin') {
-        setDisplayIdentity({
-          type: 'faith_admin',
-          name: 'FAITH Administration',
-          avatarUrl: null
-        })
-      }
-      else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
-        const { data: orgData } = await supabase
-          .from('organizations')
-          .select('name, avatar_url')
-          .eq('id', postData.posted_as_org_id)
-          .single()
-
-        if (orgData) {
+      // Only fetch identity if we don't already have it from props
+      if (!post.postedAsType) {
+        if (postData.posted_as_type === 'user') {
           setDisplayIdentity({
-            type: 'organization',
-            name: orgData.name,
-            avatarUrl: orgData.avatar_url || null
+            type: 'user',
+            name: post.author,
+            avatarUrl: post.avatarUrl
           })
+        }
+        else if (postData.posted_as_type === 'faith_admin') {
+          setDisplayIdentity({
+            type: 'faith_admin',
+            name: 'FAITH Administration',
+            avatarUrl: null
+          })
+        }
+        else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
+          const { data: orgData } = await supabase
+            .from('organizations')
+            .select('name, avatar_url')
+            .eq('id', postData.posted_as_org_id)
+            .single()
+
+          if (orgData) {
+            setDisplayIdentity({
+              type: 'organization',
+              name: orgData.name,
+              avatarUrl: orgData.avatar_url || null
+            })
+          }
         }
       }
     } catch (error) {
@@ -122,8 +147,20 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   }
 
   useEffect(() => {
-    loadPostData()
-  }, [post.id, supabase])
+    // OPTIMIZED: Only fetch if we're missing critical data
+    const needsFetch = !post.postedAsType || !eventId
+    
+    if (needsFetch) {
+      setLoading(true)
+      loadPostData()
+    } else {
+      // We already have all the data, just get user ID
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        setCurrentUserId(user?.id || null)
+        setCanEditTags(user?.id === post.authorId)
+      })
+    }
+  }, [post.id])
 
   const handlePostUpdate = () => {
     loadPostData()
@@ -168,7 +205,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     setPreviewOpen(true)
   }
 
-  if (loading) {
+  // OPTIMIZED: Removed loading skeleton since we start with data
+  if (loading && !post.postedAsType) {
     return (
       <div className="bg-white rounded-xl border border-gray-300 p-4 animate-pulse">
         <div className="flex items-start gap-3 mb-3">
@@ -233,7 +271,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                         Org
                       </span>
                     )}
-                    {/* Only show pinned badge when on event page */}
                     {isOnEventPage && pinOrder && (
                       <span className="inline-flex items-center gap-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-xs font-bold">
                         <Pin className="h-3 w-3 fill-current" />
@@ -280,7 +317,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
             </div>
           </div>
 
-          {/* Tagged Users - New Component */}
+          {/* Tagged Users */}
           <div className="mb-3">
             <TaggedUsersDisplay
               contentType="post"

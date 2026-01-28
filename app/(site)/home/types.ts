@@ -23,6 +23,12 @@ export type Post = {
   likes: number
   comments: number
   imageUrls: string[]
+  postedAsType?: string
+  postedAsOrgId?: string | null
+  reactionCount?: number
+  repostCount?: number
+  editedAt?: string | null
+  pinOrder?: number | null
 }
 
 export type EventItem = {

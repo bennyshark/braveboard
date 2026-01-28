@@ -1,4 +1,4 @@
-// app/(site)/home/page.tsx - FIXED duplicate keys + progressive loading
+// app/(site)/home/page.tsx - OPTIMIZED: 
 "use client"
 
 import { useState, useEffect, Suspense, useRef, useCallback } from "react"
@@ -519,7 +519,6 @@ function HomeContent() {
       if (reset) {
         setFreeWallItems(combined)
       } else {
-        // DEDUPLICATION: Filter out items that already exist
         setFreeWallItems(prev => {
           const existingIds = new Set(prev.map(item => item.data.id))
           const newItems = combined.filter(item => !existingIds.has(item.data.id))
@@ -546,6 +545,7 @@ function HomeContent() {
     try {
       setIsLoadingEvents(true)
       
+      // OPTIMIZED: Fetch ALL post data in one go
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
         .select(`*, creator_org:organizations(name)`)
@@ -556,9 +556,10 @@ function HomeContent() {
 
       const eventIds = eventsData.map((e: any) => e.id)
       
+      // Fetch all posts with ALL necessary data
       const { data: allPosts, error: postsError } = await supabase
         .from('posts')
-        .select('*, posted_as_type, posted_as_org_id, comments')
+        .select('*') // Get everything
         .in('event_id', eventIds)
         .order('created_at', { ascending: false })
 
@@ -636,6 +637,8 @@ function HomeContent() {
         }
 
         const eventPosts = postsByEvent.get(row.id) || []
+        
+        // CRITICAL: Pass ALL fetched data to avoid PostCard refetching
         const posts = eventPosts.map((p: any) => {
           let displayName = 'Unknown User'
           let displayAvatar = null
@@ -669,7 +672,14 @@ function HomeContent() {
             }),
             likes: p.likes || 0,
             comments: p.comments || 0,
-            imageUrls: p.image_urls || []
+            imageUrls: p.image_urls || [],
+            // OPTIMIZED: Pass pre-fetched data
+            postedAsType: p.posted_as_type,
+            postedAsOrgId: p.posted_as_org_id,
+            reactionCount: p.reaction_count || 0,
+            repostCount: p.repost_count || 0,
+            editedAt: p.edited_at,
+            pinOrder: p.pin_order
           }
         })
 
@@ -822,6 +832,7 @@ function HomeContent() {
     }
   }
 
+  // ... (rest of the useEffects stay the same)
   useEffect(() => {
     if (shouldAutoLoad && initialBatchLoaded && activeFeedFilter === 'free_wall') {
       const timer = setTimeout(() => {
@@ -1118,7 +1129,6 @@ function HomeContent() {
             {activeFeedFilter === "free_wall" && (
               <>
                 {freeWallItems.map((item) => {
-                  // Use unique key combining type and ID
                   const uniqueKey = `${item.type}-${item.data.id}`
                   
                   return (
