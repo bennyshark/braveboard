@@ -1,6 +1,8 @@
 // components/comments/CommentItem.tsx
 "use client"
+
 import { useState } from "react"
+import { useRouter } from "next/navigation" // Import useRouter
 import { 
   Reply, 
   Shield, 
@@ -53,6 +55,7 @@ export function CommentItem({
   depth = 0,
   isInsideModal = false
 }: CommentItemProps) {
+  const router = useRouter() // Initialize router
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showReplyBox, setShowReplyBox] = useState(false)
   const [reactionCount, setReactionCount] = useState(comment.reactionCount || 0)
@@ -105,6 +108,34 @@ export function CommentItem({
       case 'faith_admin': return 'from-purple-400 to-purple-600'
       case 'organization': return 'from-orange-400 to-orange-600'
       default: return 'from-blue-400 to-blue-600'
+    }
+  }
+
+  // Handle navigation based on author type
+  const handleAuthorClick = (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent bubbling
+    e.preventDefault()
+
+    if (isDeleted) return
+
+    switch (comment.postedAsType) {
+      case 'faith_admin':
+        router.push('/faith-admin')
+        break
+      case 'organization':
+        // Ensure we have an Org ID to navigate to
+        if (comment.postedAsOrgId) {
+          router.push(`/organization/${comment.postedAsOrgId}`)
+        } else {
+          // Fallback if ID is missing (though it shouldn't be)
+          router.push('/organizations')
+        }
+        break
+      case 'user':
+      default:
+        // Redirect to user profile
+        router.push(`/user/${comment.authorId}`)
+        break
     }
   }
 
@@ -171,38 +202,55 @@ export function CommentItem({
         isDeleted ? 'bg-gray-100 border-gray-300' : 'bg-gray-50 border-gray-200'
       }`}>
         <div className="flex items-start gap-2 mb-2">
-          {isDeleted ? (
-            <div className="h-7 w-7 rounded-lg bg-gray-300 flex items-center justify-center flex-shrink-0">
-              <Trash2 className="h-3 w-3 text-gray-500" />
-            </div>
-          ) : comment.authorAvatar ? (
-            <img 
-              src={comment.authorAvatar}
-              alt={comment.authorName}
-              className="h-7 w-7 rounded-lg object-cover flex-shrink-0"
-            />
-          ) : (
-            <div className={`h-7 w-7 rounded-lg bg-gradient-to-br ${getAvatarGradient(comment.postedAsType)} flex items-center justify-center flex-shrink-0`}>
-              {comment.postedAsType !== 'user' ? (
-                getIdentityIcon(comment.postedAsType)
-              ) : (
-                <span className="text-white font-bold text-xs">{getInitials(comment.authorName)}</span>
-              )}
-            </div>
-          )}
+          {/* Avatar Section */}
+          <div 
+            onClick={handleAuthorClick}
+            className={`flex-shrink-0 ${!isDeleted ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+          >
+            {isDeleted ? (
+              <div className="h-7 w-7 rounded-lg bg-gray-300 flex items-center justify-center">
+                <Trash2 className="h-3 w-3 text-gray-500" />
+              </div>
+            ) : comment.authorAvatar ? (
+              <img 
+                src={comment.authorAvatar}
+                alt={comment.authorName}
+                className="h-7 w-7 rounded-lg object-cover"
+              />
+            ) : (
+              <div className={`h-7 w-7 rounded-lg bg-gradient-to-br ${getAvatarGradient(comment.postedAsType)} flex items-center justify-center`}>
+                {comment.postedAsType !== 'user' ? (
+                  getIdentityIcon(comment.postedAsType)
+                ) : (
+                  <span className="text-white font-bold text-xs">{getInitials(comment.authorName)}</span>
+                )}
+              </div>
+            )}
+          </div>
           
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`font-bold text-sm ${isDeleted ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+                {/* Author Name Section */}
+                <span 
+                  onClick={handleAuthorClick}
+                  className={`font-bold text-sm ${
+                    isDeleted 
+                      ? 'text-gray-500 italic' 
+                      : 'text-gray-900 cursor-pointer hover:underline hover:text-blue-600 transition-colors'
+                  }`}
+                >
                   {isDeleted ? 'Deleted User' : comment.authorName}
                 </span>
+                
                 {!isDeleted && getIdentityBadge(comment.postedAsType)}
+                
                 <span className="flex items-center gap-1 text-xs text-gray-500">
                   <Clock className="h-3 w-3" />
                   {comment.createdAt}
                 </span>
               </div>
+              
               {!isDeleted && (
                 <CommentOptionsMenu
                   commentId={comment.id}
