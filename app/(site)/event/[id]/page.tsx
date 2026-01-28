@@ -1,4 +1,4 @@
-// app/(site)/event/[id]/page.tsx - WITH PROGRESSIVE LOADING
+// app/(site)/event/[id]/page.tsx - FIXED duplicate keys issue
 "use client"
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
@@ -167,7 +167,6 @@ function EventDetailsContent() {
   
   const [event, setEvent] = useState<EventDetails | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
-  const [allPosts, setAllPosts] = useState<Post[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingPosts, setIsLoadingPosts] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -348,12 +347,15 @@ function EventDetailsContent() {
 
       if (reset) {
         setPosts(mappedPosts)
-        setAllPosts(mappedPosts)
         setInitialBatchLoaded(true)
         setShouldAutoLoad(true)
       } else {
-        setPosts(prev => [...prev, ...mappedPosts])
-        setAllPosts(prev => [...prev, ...mappedPosts])
+        // DEDUPLICATION: Filter out posts that already exist
+        setPosts(prev => {
+          const existingIds = new Set(prev.map(p => p.id))
+          const newPosts = mappedPosts.filter(p => !existingIds.has(p.id))
+          return [...prev, ...newPosts]
+        })
       }
 
       setHasMore(mappedPosts.length === count)
@@ -438,7 +440,6 @@ function EventDetailsContent() {
     setInitialBatchLoaded(false)
     setShouldAutoLoad(false)
     setPosts([])
-    setAllPosts([])
     loadEventData()
   }
 
