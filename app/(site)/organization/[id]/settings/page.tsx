@@ -354,6 +354,13 @@ function OrganizationSettingsContent() {
     }
   }
 
+  function clearCropModal() {
+    setCropModalOpen(false)
+    setImageSrc("")
+    setCrop({ x: 0, y: 0, width: 200, height: 200 })
+    setDragType(null)
+  }
+
   async function updateOrganization() {
     if (!organization) return
 
@@ -380,6 +387,32 @@ function OrganizationSettingsContent() {
     } catch (error: any) {
       console.error('Error updating organization:', error)
       alert(`Failed to update: ${error.message}`)
+    }
+  }
+
+  async function removeImage(type: 'avatar' | 'cover') {
+    if (!organization) return
+    
+    const message = type === 'avatar' 
+      ? 'Are you sure you want to remove the avatar?' 
+      : 'Are you sure you want to remove the cover photo?'
+    
+    if (!confirm(message)) return
+
+    try {
+      const updateField = type === 'avatar' ? 'avatar_url' : 'cover_url'
+      const { error } = await supabase
+        .from('organizations')
+        .update({ [updateField]: null })
+        .eq('id', orgId)
+
+      if (error) throw error
+
+      setOrganization({ ...organization, [updateField]: null })
+      alert(`${type === 'avatar' ? 'Avatar' : 'Cover photo'} removed successfully!`)
+    } catch (error: any) {
+      console.error('Error removing image:', error)
+      alert(`Failed to remove image: ${error.message}`)
     }
   }
 
@@ -668,8 +701,7 @@ function OrganizationSettingsContent() {
       if (updateError) throw updateError
 
       setOrganization({ ...organization, [updateField]: publicUrl })
-      setCropModalOpen(false)
-      setImageSrc("")
+      clearCropModal()
 
     } catch (error) {
       console.error('Error uploading image:', error)
@@ -757,7 +789,7 @@ function OrganizationSettingsContent() {
                 </p>
               </div>
               <button 
-                onClick={() => setCropModalOpen(false)}
+                onClick={clearCropModal}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <X className="h-5 w-5" />
@@ -779,7 +811,7 @@ function OrganizationSettingsContent() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setCropModalOpen(false)}
+                  onClick={clearCropModal}
                   className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition-colors"
                 >
                   Cancel
@@ -840,16 +872,26 @@ function OrganizationSettingsContent() {
               className="w-full h-full object-cover"
             />
           )}
-          <label className="absolute top-4 right-4 p-2 bg-white/90 hover:bg-white rounded-lg cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-            <Camera className="h-4 w-4 text-gray-700" />
-            <input 
-              type="file" 
-              className="hidden" 
-              accept="image/*"
-              onChange={(e) => handleFileSelect(e, 'cover')}
-              disabled={uploading}
-            />
-          </label>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <label className="p-2 bg-white/90 hover:bg-white rounded-lg cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+              <Camera className="h-4 w-4 text-gray-700" />
+              <input 
+                type="file" 
+                className="hidden" 
+                accept="image/*"
+                onChange={(e) => handleFileSelect(e, 'cover')}
+                disabled={uploading}
+              />
+            </label>
+            {organization.cover_url && (
+              <button
+                onClick={() => removeImage('cover')}
+                className="p-2 bg-white/90 hover:bg-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+              >
+                <Trash2 className="h-4 w-4 text-red-600" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Content Area - Fixed Overlap */}
@@ -873,22 +915,38 @@ function OrganizationSettingsContent() {
                   </div>
                 )}
                 
-                {/* Avatar Edit Button */}
-                <label className="absolute bottom-2 right-2 p-2 bg-white rounded-lg cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-gray-100">
-                  <Camera className="h-4 w-4 text-gray-700" />
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    accept="image/*"
-                    onChange={(e) => handleFileSelect(e, 'avatar')}
-                    disabled={uploading}
-                  />
-                </label>
+                {/* Avatar Edit/Remove Buttons */}
+                <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <label className="p-2 bg-white rounded-lg cursor-pointer shadow-lg border border-gray-100">
+                    <Camera className="h-4 w-4 text-gray-700" />
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*"
+                      onChange={(e) => handleFileSelect(e, 'avatar')}
+                      disabled={uploading}
+                    />
+                  </label>
+                  {organization.avatar_url && (
+                    <button
+                      onClick={() => removeImage('avatar')}
+                      className="p-2 bg-white rounded-lg shadow-lg border border-gray-100"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </button>
+                  )}
+                </div>
              </div>
 
              {/* Edit Toggle */}
              <button
-              onClick={() => setShowEditOrg(!showEditOrg)}
+              onClick={() => {
+                setShowEditOrg(!showEditOrg)
+                // Clear crop modal if open
+                if (cropModalOpen) {
+                  clearCropModal()
+                }
+              }}
               className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-sm transition-colors flex items-center gap-2 mb-2"
             >
               <Edit className="h-4 w-4" />
@@ -944,6 +1002,10 @@ function OrganizationSettingsContent() {
                     setEditName(organization.name)
                     setEditCode(organization.code)
                     setEditDescription(organization.description || "")
+                    // Clear crop modal if open
+                    if (cropModalOpen) {
+                      clearCropModal()
+                    }
                   }}
                   className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-sm transition-colors"
                 >
