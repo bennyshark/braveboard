@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
 import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
@@ -29,6 +29,7 @@ type PostIdentity = {
 
 export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCardProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
@@ -52,6 +53,9 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
+
+  // Check if we're on the event page
+  const isOnEventPage = pathname?.startsWith('/event/')
 
   const loadPostData = async () => {
     try {
@@ -229,7 +233,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                         Org
                       </span>
                     )}
-                    {pinOrder && (
+                    {/* Only show pinned badge when on event page */}
+                    {isOnEventPage && pinOrder && (
                       <span className="inline-flex items-center gap-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-xs font-bold">
                         <Pin className="h-3 w-3 fill-current" />
                         Pinned {pinOrder === 1 ? '1st' : pinOrder === 2 ? '2nd' : '3rd'}

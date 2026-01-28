@@ -15,6 +15,12 @@ interface PostOptionsMenuProps {
   onDelete?: () => void
 }
 
+type PinStatus = {
+  1: boolean
+  2: boolean
+  3: boolean
+}
+
 export function PostOptionsMenu({ 
   postId, 
   eventId, 
@@ -31,6 +37,7 @@ export function PostOptionsMenu({
   const [canPin, setCanPin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [pinStatus, setPinStatus] = useState<PinStatus>({ 1: false, 2: false, 3: false })
   const menuRef = useRef<HTMLDivElement>(null)
 
   const supabase = createBrowserClient(
@@ -44,6 +51,7 @@ export function PostOptionsMenu({
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
+        // Check if user can manage (delete) post
         const { data: canManage } = await supabase.rpc('can_user_manage_post', {
           p_post_id: postId,
           p_user_id: user.id
@@ -52,11 +60,53 @@ export function PostOptionsMenu({
         setCanEdit(user.id === authorId)
         setCanDelete(canManage || false)
 
-        const { data: canPinPost } = await supabase.rpc('can_user_pin_post', {
-          p_event_id: eventId,
-          p_user_id: user.id
-        })
-        setCanPin(canPinPost || false)
+        // Check if user can pin posts (admin or org officer)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        const isFaithAdmin = profile?.role === 'admin'
+
+        // Check if user is an officer/admin of any participating org
+        const { data: eventData } = await supabase
+          .from('events')
+          .select('participant_orgs')
+          .eq('id', eventId)
+          .single()
+
+        let isOrgOfficer = false
+        if (eventData?.participant_orgs && eventData.participant_orgs.length > 0) {
+          const { data: userOrgs } = await supabase
+            .from('user_organizations')
+            .select('organization_id, role')
+            .eq('user_id', user.id)
+            .in('organization_id', eventData.participant_orgs)
+            .in('role', ['officer', 'admin'])
+
+          isOrgOfficer = (userOrgs && userOrgs.length > 0) || false
+        }
+
+        setCanPin(isFaithAdmin || isOrgOfficer)
+
+        // Get existing pinned posts
+        const { data: pinnedPosts } = await supabase
+          .from('posts')
+          .select('pin_order')
+          .eq('event_id', eventId)
+          .not('pin_order', 'is', null)
+          .neq('id', postId) // Exclude current post
+
+        const newPinStatus: PinStatus = { 1: false, 2: false, 3: false }
+        if (pinnedPosts) {
+          pinnedPosts.forEach(post => {
+            if (post.pin_order && [1, 2, 3].includes(post.pin_order)) {
+              newPinStatus[post.pin_order as 1 | 2 | 3] = true
+            }
+          })
+        }
+        setPinStatus(newPinStatus)
 
       } catch (error) {
         console.error('Error checking permissions:', error)
@@ -129,7 +179,7 @@ export function PostOptionsMenu({
       </button>
 
       {showMenu && (
-        <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border-2 border-gray-200 z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-xl border-2 border-gray-200 z-50 overflow-hidden">
           {canEdit && (
             <button
               onClick={(e) => {
@@ -151,32 +201,68 @@ export function PostOptionsMenu({
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      handlePin(1)
+                      if (!pinStatus[1]) handlePin(1)
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-yellow-50 text-left text-sm font-medium text-gray-700 hover:text-yellow-700 transition-colors"
+                    disabled={pinStatus[1]}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition-colors ${
+                      pinStatus[1]
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'hover:bg-yellow-50 text-gray-700 hover:text-yellow-700'
+                    }`}
                   >
-                    <Pin className="h-4 w-4" />
-                    Pin as 1st
+                    <div className="flex items-center gap-3">
+                      <Pin className="h-4 w-4" />
+                      <span>Pin as 1st</span>
+                    </div>
+                    {pinStatus[1] && (
+                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                        Taken
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      handlePin(2)
+                      if (!pinStatus[2]) handlePin(2)
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-yellow-50 text-left text-sm font-medium text-gray-700 hover:text-yellow-700 transition-colors"
+                    disabled={pinStatus[2]}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition-colors ${
+                      pinStatus[2]
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'hover:bg-yellow-50 text-gray-700 hover:text-yellow-700'
+                    }`}
                   >
-                    <Pin className="h-4 w-4" />
-                    Pin as 2nd
+                    <div className="flex items-center gap-3">
+                      <Pin className="h-4 w-4" />
+                      <span>Pin as 2nd</span>
+                    </div>
+                    {pinStatus[2] && (
+                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                        Taken
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      handlePin(3)
+                      if (!pinStatus[3]) handlePin(3)
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-yellow-50 text-left text-sm font-medium text-gray-700 hover:text-yellow-700 transition-colors"
+                    disabled={pinStatus[3]}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition-colors ${
+                      pinStatus[3]
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'hover:bg-yellow-50 text-gray-700 hover:text-yellow-700'
+                    }`}
                   >
-                    <Pin className="h-4 w-4" />
-                    Pin as 3rd
+                    <div className="flex items-center gap-3">
+                      <Pin className="h-4 w-4" />
+                      <span>Pin as 3rd</span>
+                    </div>
+                    {pinStatus[3] && (
+                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                        Taken
+                      </span>
+                    )}
                   </button>
                 </>
               ) : (
