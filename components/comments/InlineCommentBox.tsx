@@ -78,6 +78,16 @@ export function InlineCommentBox({
           icon: 'user'
         })
 
+        // --- RESTRICTION: No Org/Faith posting on Free Wall or Reposts ---
+        if (contentType === 'free_wall_post' || contentType === 'repost') {
+          if (isMounted) {
+            setAvailableIdentities(identities)
+            setSelectedIdentity(identities[0])
+            setIsLoadingIdentities(false)
+          }
+          return
+        }
+
         // 2. Check for Faith Admin
         const isFaithAdmin = profile?.role === 'admin'
         if (isFaithAdmin) {
@@ -89,16 +99,17 @@ export function InlineCommentBox({
         }
 
         // 3. Fetch Organizations (Officer/Admin roles)
-        // Note: Removed logo_url to match CreatePostDialog logic exactly
+        // UPDATED: Removed !inner to use Left Join for safety, and added ordering
         const { data: userOrgs, error: orgsError } = await supabase
           .from('user_organizations')
           .select(`
             organization_id,
             role,
-            organization:organizations!inner(id, name)
+            organization:organizations(id, name)
           `)
           .eq('user_id', user.id)
           .in('role', ['officer', 'admin'])
+          .order('joined_at', { ascending: false }) // Consistent ordering
 
         if (orgsError) {
           console.error("Error fetching organizations:", orgsError)
@@ -106,8 +117,8 @@ export function InlineCommentBox({
 
         if (userOrgs && userOrgs.length > 0) {
           userOrgs.forEach((uo: any) => {
-            // Ensure organization exists and has a name
-            if (uo.organization) {
+            // Check if organization data was successfully joined
+            if (uo.organization && uo.organization.id && uo.organization.name) {
               identities.push({
                 type: 'organization',
                 id: uo.organization.id,
@@ -137,7 +148,7 @@ export function InlineCommentBox({
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [contentType])
 
   // Handle click outside dropdown
   useEffect(() => {
@@ -242,28 +253,28 @@ export function InlineCommentBox({
             <button
               onClick={() => setShowIdentityDropdown(!showIdentityDropdown)}
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-2 py-1 -ml-2 rounded-lg hover:bg-gray-100 transition-colors text-xs font-bold text-gray-700"
+              className="flex items-center gap-2 px-2 py-1 -ml-2 rounded-lg hover:bg-gray-100 transition-colors text-xs font-bold text-gray-700 max-w-[200px]"
             >
-              <span className="text-gray-500 font-medium">Commenting as</span>
-              <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-medium whitespace-nowrap">Commenting as</span>
+              <div className="flex items-center gap-1.5 min-w-0">
                 {selectedIdentity && getIdentityIcon(selectedIdentity.icon)}
-                <span className="truncate max-w-[150px]">{selectedIdentity?.name}</span>
+                <span className="truncate">{selectedIdentity?.name}</span>
               </div>
-              <ChevronDown className={`h-3 w-3 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
             </button>
 
             {showIdentityDropdown && (
-              <div className="absolute top-full left-0 mt-1 w-60 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+              <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-60 py-1">
                 {availableIdentities.map((identity, index) => (
                   <button
-                    key={index}
+                    key={`${identity.type}-${identity.id || index}`}
                     onClick={() => {
                       setSelectedIdentity(identity)
                       setShowIdentityDropdown(false)
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left"
                   >
-                    <div className={`p-1.5 rounded-md ${
+                    <div className={`p-1.5 rounded-md flex-shrink-0 ${
                       identity.icon === 'faith' ? 'bg-purple-100' : 
                       identity.icon === 'org' ? 'bg-orange-100' : 'bg-blue-100'
                     }`}>
@@ -274,7 +285,7 @@ export function InlineCommentBox({
                       <div className="text-[10px] text-gray-500 capitalize">{identity.type.replace('_', ' ')}</div>
                     </div>
                     {selectedIdentity?.name === identity.name && (
-                      <div className="h-1.5 w-1.5 rounded-full bg-blue-600"></div>
+                      <div className="h-1.5 w-1.5 rounded-full bg-blue-600 flex-shrink-0"></div>
                     )}
                   </button>
                 ))}
