@@ -1,3 +1,4 @@
+// app/(site)/event/[id]/page.tsx - WITH PROGRESSIVE LOADING
 "use client"
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
@@ -48,6 +49,10 @@ type EventDetails = {
   totalPosts: number
   participantDetails: ParticipantData 
 }
+
+const INITIAL_POSTS = 3
+const AUTO_LOAD_POSTS = 3
+const POSTS_PER_SCROLL = 3
 
 const ParticipantModal = ({ isOpen, onClose, data }: { isOpen: boolean; onClose: () => void; data: ParticipantData }) => {
   if (!isOpen) return null;
@@ -162,12 +167,17 @@ function EventDetailsContent() {
   
   const [event, setEvent] = useState<EventDetails | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
+  const [allPosts, setAllPosts] = useState<Post[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
   
-  // New State for Posting Status
+  const [initialBatchLoaded, setInitialBatchLoaded] = useState(false)
+  const [shouldAutoLoad, setShouldAutoLoad] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  
   const [isPostingExpired, setIsPostingExpired] = useState(false)
-
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -175,6 +185,8 @@ function EventDetailsContent() {
   const [currentUserOrgs, setCurrentUserOrgs] = useState<string[]>([])
   
   const postRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
   
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -205,7 +217,6 @@ function EventDetailsContent() {
 
       if (eventError) throw eventError
 
-      // --- EXPIRATION CHECK LOGIC ---
       const deadlineString = eventData.posting_open_until || eventData.end_date
       if (deadlineString) {
         const deadlineDate = new Date(deadlineString)
@@ -214,7 +225,6 @@ function EventDetailsContent() {
       } else {
         setIsPostingExpired(false)
       }
-      // -----------------------------
 
       const start = new Date(eventData.start_date)
       const end = new Date(eventData.end_date)
@@ -273,12 +283,33 @@ function EventDetailsContent() {
         }
       })
 
+      // Load posts progressively
+      await loadPosts(INITIAL_POSTS, true)
+
+    } catch (error) {
+      console.error("Error loading event:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const loadPosts = async (count: number, reset: boolean = false) => {
+    try {
+      if (reset) {
+        setIsLoadingPosts(true)
+      } else {
+        setIsLoadingMore(true)
+      }
+
+      const offset = reset ? 0 : posts.length
+
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('*')
         .eq('event_id', eventId)
         .order('pin_order', { ascending: true })
         .order('created_at', { ascending: false })
+        .range(offset, offset + count - 1)
 
       if (postsError) throw postsError
 
@@ -299,7 +330,7 @@ function EventDetailsContent() {
         ]) || []
       )
 
-      setPosts(postsData.map((post: any) => {
+      const mappedPosts = postsData.map((post: any) => {
         const authorData = authorMap.get(post.author_id) || { name: 'Unknown User', avatarUrl: '' }
         return {
           id: post.id,
@@ -313,14 +344,72 @@ function EventDetailsContent() {
           comments: post.comments || 0,
           imageUrls: post.image_urls || []
         }
-      }))
+      })
+
+      if (reset) {
+        setPosts(mappedPosts)
+        setAllPosts(mappedPosts)
+        setInitialBatchLoaded(true)
+        setShouldAutoLoad(true)
+      } else {
+        setPosts(prev => [...prev, ...mappedPosts])
+        setAllPosts(prev => [...prev, ...mappedPosts])
+      }
+
+      setHasMore(mappedPosts.length === count)
 
     } catch (error) {
-      console.error("Error loading event:", error)
+      console.error("Error loading posts:", error)
     } finally {
-      setIsLoading(false)
+      setIsLoadingPosts(false)
+      setIsLoadingMore(false)
     }
   }
+
+  // Auto-load second batch
+  useEffect(() => {
+    if (shouldAutoLoad && initialBatchLoaded && !isLoading) {
+      const timer = setTimeout(() => {
+        loadPosts(AUTO_LOAD_POSTS, false)
+        setShouldAutoLoad(false)
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [shouldAutoLoad, initialBatchLoaded, isLoading])
+
+  // Infinite scroll
+  useEffect(() => {
+    if (shouldAutoLoad || !initialBatchLoaded || isLoading) {
+      return
+    }
+
+    if (observerRef.current) {
+      observerRef.current.disconnect()
+    }
+
+    const options = {
+      root: null,
+      rootMargin: '200px',
+      threshold: 0.1
+    }
+
+    observerRef.current = new IntersectionObserver((entries) => {
+      const target = entries[0]
+      if (target.isIntersecting && hasMore && !isLoadingMore) {
+        loadPosts(POSTS_PER_SCROLL, false)
+      }
+    }, options)
+
+    if (loadMoreTriggerRef.current) {
+      observerRef.current.observe(loadMoreTriggerRef.current)
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+      }
+    }
+  }, [shouldAutoLoad, initialBatchLoaded, isLoading, hasMore, isLoadingMore, posts.length])
 
   const handleDeleteEvent = async () => {
     if (!confirm("Are you sure you want to delete this event? This cannot be undone.")) return
@@ -343,6 +432,14 @@ function EventDetailsContent() {
   const handleCreatePostClick = () => {
     if (isPostingExpired) return
     setIsCreatePostOpen(true)
+  }
+
+  const handlePostCreated = () => {
+    setInitialBatchLoaded(false)
+    setShouldAutoLoad(false)
+    setPosts([])
+    setAllPosts([])
+    loadEventData()
   }
 
   useEffect(() => {
@@ -415,7 +512,6 @@ function EventDetailsContent() {
                 {event.organizerName}
               </span>
 
-              {/* ENDED BADGE */}
               {isPostingExpired && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-red-100 text-red-700 border border-red-200">
                     <Clock className="h-3 w-3" />
@@ -473,10 +569,9 @@ function EventDetailsContent() {
           <div className="p-6 border-b border-gray-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5 text-gray-600" />
-              <h2 className="text-xl font-black text-gray-900">Discussions ({posts.length})</h2>
+              <h2 className="text-xl font-black text-gray-900">Discussions ({event.totalPosts})</h2>
             </div>
 
-            {/* HEADER ADD POST BUTTON */}
             <button 
               onClick={handleCreatePostClick}
               disabled={isPostingExpired}
@@ -501,26 +596,59 @@ function EventDetailsContent() {
           </div>
 
           <div className="p-6 space-y-4">
-            {posts.length > 0 ? posts.map(post => (
-              <div
-                key={post.id}
-                ref={(el) => {
-                  if (el) {
-                    postRefs.current.set(post.id, el)
-                  }
-                }}
-                className={`transition-all duration-500 ${
-                  highlightedId === post.id ? 'ring-4 ring-blue-400 rounded-xl' : ''
-                }`}
-              >
-                <PostCard post={post} eventId={eventId} onPostUpdated={loadEventData} onPostDeleted={loadEventData} />
+            {isLoadingPosts && posts.length === 0 ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
               </div>
-            )) : (
+            ) : posts.length > 0 ? (
+              <>
+                {posts.map(post => (
+                  <div
+                    key={post.id}
+                    ref={(el) => {
+                      if (el) {
+                        postRefs.current.set(post.id, el)
+                      }
+                    }}
+                    className={`transition-all duration-500 ${
+                      highlightedId === post.id ? 'ring-4 ring-blue-400 rounded-xl' : ''
+                    }`}
+                  >
+                    <PostCard post={post} eventId={eventId} onPostUpdated={handlePostCreated} onPostDeleted={handlePostCreated} />
+                  </div>
+                ))}
+                
+                {hasMore && !shouldAutoLoad && (
+                  <div ref={loadMoreTriggerRef} className="py-8 flex justify-center">
+                    {isLoadingMore && (
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Loading more posts...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {shouldAutoLoad && (
+                  <div className="py-8 flex justify-center">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Loading more posts...</span>
+                    </div>
+                  </div>
+                )}
+                
+                {!hasMore && posts.length > 0 && (
+                  <div className="py-8 text-center text-gray-500">
+                    <p className="font-medium">All posts loaded</p>
+                  </div>
+                )}
+              </>
+            ) : (
               <div className="text-center py-12">
                 <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500 font-medium mb-4">No posts yet</p>
                 
-                {/* EMPTY STATE BUTTON */}
                 <button 
                   onClick={handleCreatePostClick}
                   disabled={isPostingExpired}
@@ -538,7 +666,7 @@ function EventDetailsContent() {
         </div>
       </div>
 
-      <CreatePostDialog isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} eventId={eventId} onPostCreated={loadEventData} />
+      <CreatePostDialog isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} eventId={eventId} onPostCreated={handlePostCreated} />
     </>
   )
 }

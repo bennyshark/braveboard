@@ -1,7 +1,7 @@
-// app/(site)/home/page.tsx - UPDATED with scroll to content functionality
+// app/(site)/home/page.tsx - FIXED duplicate keys + progressive loading
 "use client"
 
-import { useState, useEffect, Suspense, useRef } from "react"
+import { useState, useEffect, Suspense, useRef, useCallback } from "react"
 import { Newspaper, Calendar, Megaphone, MessageSquare, Loader2, AlertCircle } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Organization, EventItem } from "@/app/(site)/home/types"
@@ -57,6 +57,29 @@ type FreeWallPost = {
   editedAt: string | null
 }
 
+type OriginalContent = {
+  type: 'free_wall_post' | 'post' | 'bulletin' | 'announcement' | 'repost'
+  id: string
+  content?: string
+  header?: string
+  body?: string
+  authorId?: string
+  authorName?: string
+  authorAvatar?: string | null
+  creatorName?: string
+  creatorAvatar?: string | null
+  creatorType?: string
+  imageUrls?: string[]
+  imageUrl?: string | null
+  createdAt: string
+  comment?: string
+  reposterId?: string
+  reposterName?: string
+  reposterAvatar?: string | null
+  contentType?: string
+  contentId?: string
+}
+
 type Repost = {
   id: string
   userId: string
@@ -66,7 +89,19 @@ type Repost = {
   contentId: string
   repostComment: string | null
   createdAt: string
+  originalContent?: OriginalContent | null
 }
+
+type FreeWallItem = {
+  type: 'post' | 'repost'
+  data: FreeWallPost | Repost
+  timestamp: number
+  createdAtRaw: string
+}
+
+const INITIAL_LOAD = 3
+const AUTO_LOAD = 3
+const ITEMS_PER_SCROLL = 3
 
 function HomeLoading() {
   return (
@@ -93,28 +128,424 @@ function HomeContent() {
   const [events, setEvents] = useState<EventItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [bulletins, setBulletins] = useState<Bulletin[]>([])
-  const [freeWallPosts, setFreeWallPosts] = useState<FreeWallPost[]>([])
-  const [reposts, setReposts] = useState<Repost[]>([])
+  const [freeWallItems, setFreeWallItems] = useState<FreeWallItem[]>([])
+  
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
   const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [isLoadingFreeWall, setIsLoadingFreeWall] = useState(false)
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false)
+  const [isLoadingBulletins, setIsLoadingBulletins] = useState(false)
+  const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  
+  const [initialBatchLoaded, setInitialBatchLoaded] = useState(false)
+  const [shouldAutoLoad, setShouldAutoLoad] = useState(false)
+  
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set())
+  
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [pendingScrollTo, setPendingScrollTo] = useState<{tab: string, id: string} | null>(null)
 
   const contentRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
   
-  // Function to handle navigation to content
+  const [lastTimestamp, setLastTimestamp] = useState<string | null>(null)
+
   const handleNavigateToContent = (tab: string, contentId: string) => {
-    // Switch tab
     setActiveFeedFilter(tab)
-    // Set pending scroll
     setPendingScrollTo({ tab, id: contentId })
+  }
+
+  const loadUserData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        setIsFaithAdmin(profile?.role === 'admin')
+
+        const { data: memberships } = await supabase
+          .from('user_organizations')
+          .select(`role, organization:organizations (id, code, name)`)
+          .eq('user_id', user.id)
+          .in('role', ['officer', 'admin'])
+        
+        const validUserOrgs: Organization[] = memberships?.map((m: any) => ({
+          id: m.organization.id,
+          code: m.organization.code,
+          name: m.organization.name,
+          role: m.role
+        })) || []
+        
+        setUserCreateOrgs(validUserOrgs)
+      }
+
+      const { data: orgsData, error: orgsError } = await supabase
+        .from('organizations')
+        .select('id, code, name, member_count')
+        .order('name')
+      
+      if (orgsError) throw orgsError
+
+      const fetchedOrgs: Organization[] = [
+        { id: "faith_admin", code: "FAITH", name: "FAITH Administration", role: "admin", members: 0 },
+        ...(orgsData?.map((o: any) => ({
+          id: o.id,
+          code: o.code,
+          name: o.name,
+          role: '',
+          members: o.member_count
+        })) || [])
+      ]
+      setAllOrganizations(fetchedOrgs)
+    } catch (err) {
+      console.error("Error loading user data:", err)
+    }
+  }
+
+  const fetchOriginalContent = async (repost: any): Promise<OriginalContent | null> => {
+    try {
+      if (repost.content_type === 'free_wall_post') {
+        const { data } = await supabase
+          .from('free_wall_posts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        const { data: authorData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .eq('id', data.author_id)
+          .maybeSingle()
+
+        return {
+          type: 'free_wall_post',
+          id: data.id,
+          content: data.content,
+          authorId: authorData?.id,
+          authorName: authorData ? `${authorData.first_name} ${authorData.last_name}` : 'Unknown User',
+          authorAvatar: authorData?.avatar_url || null,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      } else if (repost.content_type === 'post') {
+        const { data } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        const { data: authorData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .eq('id', data.author_id)
+          .maybeSingle()
+
+        return {
+          type: 'post',
+          id: data.id,
+          content: data.content,
+          authorId: authorData?.id,
+          authorName: authorData ? `${authorData.first_name} ${authorData.last_name}` : 'Unknown User',
+          authorAvatar: authorData?.avatar_url || null,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      } else if (repost.content_type === 'bulletin') {
+        const { data } = await supabase
+          .from('bulletins')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let creatorName = "Unknown"
+        let creatorAvatar = null
+        let creatorType = "user"
+        
+        if (data.creator_type === 'faith_admin') {
+          creatorName = "FAITH Administration"
+          creatorType = "faith"
+        } else if (data.creator_type === 'organization' && data.creator_org_id) {
+          const { data: orgData } = await supabase
+            .from('organizations')
+            .select('id, name, avatar_url')
+            .eq('id', data.creator_org_id)
+            .maybeSingle()
+
+          if (orgData) {
+            creatorName = orgData.name
+            creatorAvatar = orgData.avatar_url
+            creatorType = "organization"
+          }
+        }
+
+        return {
+          type: 'bulletin',
+          id: data.id,
+          header: data.header,
+          body: data.body,
+          creatorName,
+          creatorAvatar,
+          creatorType,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      } else if (repost.content_type === 'announcement') {
+        const { data } = await supabase
+          .from('announcements')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let creatorName = "Unknown"
+        let creatorAvatar = null
+        let creatorType = "user"
+        
+        if (data.creator_type === 'faith_admin') {
+          creatorName = "FAITH Administration"
+          creatorType = "faith"
+        } else if (data.creator_type === 'organization' && data.creator_org_id) {
+          const { data: orgData } = await supabase
+            .from('organizations')
+            .select('id, name, avatar_url')
+            .eq('id', data.creator_org_id)
+            .maybeSingle()
+
+          if (orgData) {
+            creatorName = orgData.name
+            creatorAvatar = orgData.avatar_url
+            creatorType = "organization"
+          }
+        }
+
+        return {
+          type: 'announcement',
+          id: data.id,
+          header: data.header,
+          body: data.body,
+          creatorName,
+          creatorAvatar,
+          creatorType,
+          imageUrl: data.image_url,
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      } else if (repost.content_type === 'repost') {
+        const { data } = await supabase
+          .from('reposts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        const { data: reposterData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .eq('id', data.user_id)
+          .maybeSingle()
+
+        return {
+          type: 'repost',
+          id: data.id,
+          comment: data.repost_comment,
+          reposterId: reposterData?.id,
+          reposterName: reposterData ? `${reposterData.first_name} ${reposterData.last_name}` : 'Unknown User',
+          reposterAvatar: reposterData?.avatar_url || null,
+          contentType: data.content_type,
+          contentId: data.content_id,
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error('Error fetching original content:', error)
+      return null
+    }
+  }
+
+  const loadFreeWall = async (itemCount: number, reset: boolean = false) => {
+    if (!reset && !hasMore) return
+    
+    try {
+      const isFirstLoad = reset || lastTimestamp === null
+      
+      if (isFirstLoad) {
+        setIsLoadingFreeWall(true)
+      } else {
+        setIsLoadingMore(true)
+      }
+
+      let postsQuery = supabase
+        .from('free_wall_posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(itemCount)
+
+      let repostsQuery = supabase
+        .from('reposts')
+        .select('*')
+        .in('content_type', ['post', 'bulletin', 'announcement', 'free_wall_post', 'repost'])
+        .order('created_at', { ascending: false })
+        .limit(itemCount)
+
+      if (!isFirstLoad && lastTimestamp) {
+        postsQuery = postsQuery.lt('created_at', lastTimestamp)
+        repostsQuery = repostsQuery.lt('created_at', lastTimestamp)
+      }
+
+      const [postsRes, repostsRes] = await Promise.all([
+        postsQuery,
+        repostsQuery
+      ])
+
+      if (postsRes.error) throw postsRes.error
+      if (repostsRes.error) throw repostsRes.error
+
+      const postAuthorIds = [...new Set(postsRes.data.map((p: any) => p.author_id))]
+      const { data: postAuthorsData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar_url')
+        .in('id', postAuthorIds)
+
+      const postAuthorMap = new Map(
+        postAuthorsData?.map(author => [
+          author.id,
+          {
+            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
+            avatarUrl: author.avatar_url
+          }
+        ]) || []
+      )
+
+      const reposterIds = [...new Set(repostsRes.data.map((r: any) => r.user_id))]
+      const { data: repostersData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar_url')
+        .in('id', reposterIds)
+
+      const reposterMap = new Map(
+        repostersData?.map(user => [
+          user.id,
+          {
+            name: `${user.first_name || 'Unknown'} ${user.last_name || 'User'}`,
+            avatarUrl: user.avatar_url
+          }
+        ]) || []
+      )
+
+      const mappedPosts: FreeWallItem[] = postsRes.data.map((p: any) => {
+        const authorData = postAuthorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
+        return {
+          type: 'post' as const,
+          data: {
+            id: p.id,
+            content: p.content,
+            authorId: p.author_id,
+            authorName: authorData.name,
+            authorAvatar: authorData.avatarUrl,
+            imageUrls: p.image_urls || [],
+            reactionCount: p.reaction_count || 0,
+            comments: p.comments || 0,
+            repostCount: p.repost_count || 0,
+            createdAt: new Date(p.created_at).toLocaleString('en-US', { 
+              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            }),
+            editedAt: p.edited_at
+          },
+          timestamp: new Date(p.created_at).getTime(),
+          createdAtRaw: p.created_at
+        }
+      })
+
+      const repostOriginalContentPromises = repostsRes.data.map(r => fetchOriginalContent(r))
+      const repostOriginalContents = await Promise.all(repostOriginalContentPromises)
+
+      const mappedReposts: FreeWallItem[] = repostsRes.data.map((r: any, index: number) => {
+        const reposterData = reposterMap.get(r.user_id) || { name: 'Unknown User', avatarUrl: null }
+        return {
+          type: 'repost' as const,
+          data: {
+            id: r.id,
+            userId: r.user_id,
+            userName: reposterData.name,
+            userAvatar: reposterData.avatarUrl,
+            contentType: r.content_type,
+            contentId: r.content_id,
+            repostComment: r.repost_comment,
+            createdAt: new Date(r.created_at).toLocaleString('en-US', { 
+              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            }),
+            originalContent: repostOriginalContents[index]
+          },
+          timestamp: new Date(r.created_at).getTime(),
+          createdAtRaw: r.created_at
+        }
+      })
+
+      const combined = [...mappedPosts, ...mappedReposts]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, itemCount)
+
+      if (reset) {
+        setFreeWallItems(combined)
+      } else {
+        // DEDUPLICATION: Filter out items that already exist
+        setFreeWallItems(prev => {
+          const existingIds = new Set(prev.map(item => item.data.id))
+          const newItems = combined.filter(item => !existingIds.has(item.data.id))
+          return [...prev, ...newItems]
+        })
+      }
+
+      if (combined.length > 0) {
+        setLastTimestamp(combined[combined.length - 1].createdAtRaw)
+      }
+
+      setHasMore(combined.length === itemCount)
+      setLoadedTabs(prev => new Set(prev).add('free_wall'))
+
+    } catch (err) {
+      console.error("Error loading free wall:", err)
+    } finally {
+      setIsLoadingFreeWall(false)
+      setIsLoadingMore(false)
+    }
   }
 
   const loadEvents = async () => {
     try {
+      setIsLoadingEvents(true)
+      
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
         .select(`*, creator_org:organizations(name)`)
@@ -260,13 +691,18 @@ function HomeContent() {
       })
 
       setEvents(mappedEvents)
+      setLoadedTabs(prev => new Set(prev).add('events'))
     } catch (err) {
       console.error("Error loading events:", err)
+    } finally {
+      setIsLoadingEvents(false)
     }
   }
 
   const loadAnnouncements = async () => {
     try {
+      setIsLoadingAnnouncements(true)
+      
       const { data: announcementsData, error } = await supabase
         .from('announcements')
         .select(`*, creator_org:organizations(name)`)
@@ -305,13 +741,18 @@ function HomeContent() {
       })
 
       setAnnouncements(mappedAnnouncements)
+      setLoadedTabs(prev => new Set(prev).add('announcements'))
     } catch (err) {
       console.error("Error loading announcements:", err)
+    } finally {
+      setIsLoadingAnnouncements(false)
     }
   }
 
   const loadBulletins = async () => {
     try {
+      setIsLoadingBulletins(true)
+      
       const { data: bulletinsData, error } = await supabase
         .from('bulletins')
         .select(`*, creator_org:organizations(name)`)
@@ -350,163 +791,105 @@ function HomeContent() {
       })
 
       setBulletins(mappedBulletins)
+      setLoadedTabs(prev => new Set(prev).add('bulletin'))
     } catch (err) {
       console.error("Error loading bulletins:", err)
+    } finally {
+      setIsLoadingBulletins(false)
     }
   }
 
-  const loadFreeWall = async () => {
-    try {
-      const [postsRes, repostsRes] = await Promise.all([
-        supabase
-          .from('free_wall_posts')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('reposts')
-          .select('*')
-          .in('content_type', ['post', 'bulletin', 'announcement', 'free_wall_post', 'repost'])
-          .order('created_at', { ascending: false })
-      ])
+  const loadTabData = async (tab: string) => {
+    if (loadedTabs.has(tab)) {
+      return
+    }
 
-      if (postsRes.error) throw postsRes.error
-      if (repostsRes.error) throw repostsRes.error
-
-      const authorIds = [...new Set(postsRes.data.map((p: any) => p.author_id))]
-      const { data: authorsData } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar_url')
-        .in('id', authorIds)
-
-      const authorMap = new Map(
-        authorsData?.map(author => [
-          author.id,
-          {
-            name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
-            avatarUrl: author.avatar_url
-          }
-        ]) || []
-      )
-
-      const mappedPosts: FreeWallPost[] = postsRes.data.map((p: any) => {
-        const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
-        return {
-          id: p.id,
-          content: p.content,
-          authorId: p.author_id,
-          authorName: authorData.name,
-          authorAvatar: authorData.avatarUrl,
-          imageUrls: p.image_urls || [],
-          reactionCount: p.reaction_count || 0,
-          comments: p.comments || 0,
-          repostCount: p.repost_count || 0,
-          createdAt: new Date(p.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          }),
-          editedAt: p.edited_at
-        }
-      })
-
-      const reposterIds = [...new Set(repostsRes.data.map((r: any) => r.user_id))]
-      const { data: repostersData } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar_url')
-        .in('id', reposterIds)
-
-      const reposterMap = new Map(
-        repostersData?.map(user => [
-          user.id,
-          {
-            name: `${user.first_name || 'Unknown'} ${user.last_name || 'User'}`,
-            avatarUrl: user.avatar_url
-          }
-        ]) || []
-      )
-
-      const mappedReposts: Repost[] = repostsRes.data.map((r: any) => {
-        const reposterData = reposterMap.get(r.user_id) || { name: 'Unknown User', avatarUrl: null }
-        return {
-          id: r.id,
-          userId: r.user_id,
-          userName: reposterData.name,
-          userAvatar: reposterData.avatarUrl,
-          contentType: r.content_type,
-          contentId: r.content_id,
-          repostComment: r.repost_comment,
-          createdAt: new Date(r.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
-        }
-      })
-
-      setFreeWallPosts(mappedPosts)
-      setReposts(mappedReposts)
-    } catch (err) {
-      console.error("Error loading free wall:", err)
+    switch(tab) {
+      case 'free_wall':
+        await loadFreeWall(INITIAL_LOAD, true)
+        setInitialBatchLoaded(true)
+        setShouldAutoLoad(true)
+        break
+      case 'events':
+        await loadEvents()
+        break
+      case 'announcements':
+        await loadAnnouncements()
+        break
+      case 'bulletin':
+        await loadBulletins()
+        break
     }
   }
 
   useEffect(() => {
-    async function loadData() {
-      setIsLoading(true)
+    if (shouldAutoLoad && initialBatchLoaded && activeFeedFilter === 'free_wall') {
+      const timer = setTimeout(() => {
+        loadFreeWall(AUTO_LOAD, false)
+        setShouldAutoLoad(false)
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [shouldAutoLoad, initialBatchLoaded, activeFeedFilter])
+
+  useEffect(() => {
+    async function initializeData() {
+      setIsInitialLoading(true)
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single()
-          
-          setIsFaithAdmin(profile?.role === 'admin')
-
-          const { data: memberships } = await supabase
-            .from('user_organizations')
-            .select(`role, organization:organizations (id, code, name)`)
-            .eq('user_id', user.id)
-            .in('role', ['officer', 'admin'])
-          
-          const validUserOrgs: Organization[] = memberships?.map((m: any) => ({
-            id: m.organization.id,
-            code: m.organization.code,
-            name: m.organization.name,
-            role: m.role
-          })) || []
-          
-          setUserCreateOrgs(validUserOrgs)
-        }
-
-        const { data: orgsData, error: orgsError } = await supabase
-          .from('organizations')
-          .select('id, code, name, member_count')
-          .order('name')
-        
-        if (orgsError) throw orgsError
-
-        const fetchedOrgs: Organization[] = [
-          { id: "faith_admin", code: "FAITH", name: "FAITH Administration", role: "admin", members: 0 },
-          ...(orgsData?.map((o: any) => ({
-            id: o.id,
-            code: o.code,
-            name: o.name,
-            role: '',
-            members: o.member_count
-          })) || [])
-        ]
-        setAllOrganizations(fetchedOrgs)
-
-        await Promise.all([loadEvents(), loadAnnouncements(), loadBulletins(), loadFreeWall()])
-
+        await loadUserData()
+        await loadTabData(activeFeedFilter)
       } catch (err) {
-        console.error("Error loading home data:", err)
+        console.error("Error initializing data:", err)
       } finally {
-        setIsLoading(false)
+        setIsInitialLoading(false)
       }
     }
 
-    loadData()
+    initializeData()
   }, [])
+
+  useEffect(() => {
+    if (!isInitialLoading) {
+      if (activeFeedFilter === 'free_wall' && !loadedTabs.has('free_wall')) {
+        setInitialBatchLoaded(false)
+        setShouldAutoLoad(false)
+      }
+      loadTabData(activeFeedFilter)
+    }
+  }, [activeFeedFilter])
+
+  useEffect(() => {
+    if (activeFeedFilter !== 'free_wall' || shouldAutoLoad || !initialBatchLoaded) {
+      return
+    }
+
+    if (observerRef.current) {
+      observerRef.current.disconnect()
+    }
+
+    const options = {
+      root: null,
+      rootMargin: '200px',
+      threshold: 0.1
+    }
+
+    observerRef.current = new IntersectionObserver((entries) => {
+      const target = entries[0]
+      if (target.isIntersecting && hasMore && !isLoadingMore) {
+        loadFreeWall(ITEMS_PER_SCROLL, false)
+      }
+    }, options)
+
+    if (loadMoreTriggerRef.current) {
+      observerRef.current.observe(loadMoreTriggerRef.current)
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+      }
+    }
+  }, [activeFeedFilter, hasMore, isLoadingMore, shouldAutoLoad, initialBatchLoaded])
 
   useEffect(() => {
     const tab = searchParams.get('tab')
@@ -516,55 +899,41 @@ function HomeContent() {
       setActiveFeedFilter(tab)
     }
 
-    // Scroll to content after data loads
-    if (scrollTo && !isLoading) {
+    if (scrollTo && !isInitialLoading) {
       setTimeout(() => {
         const element = contentRefs.current.get(scrollTo)
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' })
           setHighlightedId(scrollTo)
-          
-          // Remove highlight after 3 seconds
-          setTimeout(() => {
-            setHighlightedId(null)
-          }, 3000)
+          setTimeout(() => setHighlightedId(null), 3000)
         }
       }, 500)
     }
-  }, [searchParams, isLoading])
+  }, [searchParams, isInitialLoading])
 
-  // Handle pending scroll after tab change
   useEffect(() => {
-    if (pendingScrollTo && !isLoading) {
+    if (pendingScrollTo && !isInitialLoading) {
       setTimeout(() => {
         const element = contentRefs.current.get(pendingScrollTo.id)
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' })
           setHighlightedId(pendingScrollTo.id)
           setPendingScrollTo(null)
-          
-          // Remove highlight after 3 seconds
-          setTimeout(() => {
-            setHighlightedId(null)
-          }, 3000)
+          setTimeout(() => setHighlightedId(null), 3000)
         } else {
-          // If element not found, try again after a short delay
           setTimeout(() => {
             const retryElement = contentRefs.current.get(pendingScrollTo.id)
             if (retryElement) {
               retryElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
               setHighlightedId(pendingScrollTo.id)
               setPendingScrollTo(null)
-              
-              setTimeout(() => {
-                setHighlightedId(null)
-              }, 3000)
+              setTimeout(() => setHighlightedId(null), 3000)
             }
           }, 300)
         }
       }, 100)
     }
-  }, [pendingScrollTo, isLoading, activeFeedFilter])
+  }, [pendingScrollTo, isInitialLoading, activeFeedFilter])
 
   const feedFilters = [
     { id: "free_wall", label: "Free Wall", icon: MessageSquare, color: "gray" },
@@ -585,6 +954,18 @@ function HomeContent() {
 
   const handleEventDeleted = (eventId: string) => {
     setEvents(prev => prev.filter(e => e.id !== eventId))
+  }
+
+  const handleFreeWallUpdate = () => {
+    setLastTimestamp(null)
+    setInitialBatchLoaded(false)
+    setShouldAutoLoad(false)
+    setLoadedTabs(prev => {
+      const newSet = new Set(prev)
+      newSet.delete('free_wall')
+      return newSet
+    })
+    loadTabData('free_wall')
   }
 
   const filteredEvents = events.filter(event => {
@@ -646,11 +1027,17 @@ function HomeContent() {
     return true
   })
 
-  const freeWallContent = activeFeedFilter === "free_wall" ? 
-    [...freeWallPosts.map(p => ({ type: 'post' as const, data: p, timestamp: new Date(p.createdAt).getTime() })),
-     ...reposts.map(r => ({ type: 'repost' as const, data: r, timestamp: new Date(r.createdAt).getTime() }))]
-      .sort((a, b) => b.timestamp - a.timestamp)
-    : []
+  const isCurrentTabLoading = () => {
+    if (isInitialLoading) return true
+    
+    switch(activeFeedFilter) {
+      case 'free_wall': return isLoadingFreeWall
+      case 'events': return isLoadingEvents
+      case 'bulletin': return isLoadingBulletins
+      case 'announcements': return isLoadingAnnouncements
+      default: return false
+    }
+  }
 
   return (
     <div className="max-w-5xl mx-auto pb-10 px-4">
@@ -724,108 +1111,165 @@ function HomeContent() {
       />
 
       <div className="space-y-5">
-        {isLoading ? (
+        {isCurrentTabLoading() ? (
           <HomeLoading />
         ) : (
           <>
-            {activeFeedFilter === "free_wall" && 
-              freeWallContent.map((item, idx) => (
-                <div 
-                  key={item.type === 'post' ? `post-${item.data.id}` : `repost-${item.data.id}`}
-                  ref={(el) => {
-                    if (el) {
-                      contentRefs.current.set(item.data.id, el)
-                    }
-                  }}
-                  className={`transition-all duration-500 ${
-                    highlightedId === item.data.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
-                  }`}
-                >
-                  {item.type === 'post' ? (
-                    <FreeWallCard post={item.data} onUpdate={loadFreeWall} />
-                  ) : (
-                    <RepostCard 
-                      repost={item.data} 
-                      onUpdate={loadFreeWall} 
-                      onNavigateToContent={handleNavigateToContent}
+            {activeFeedFilter === "free_wall" && (
+              <>
+                {freeWallItems.map((item) => {
+                  // Use unique key combining type and ID
+                  const uniqueKey = `${item.type}-${item.data.id}`
+                  
+                  return (
+                    <div 
+                      key={uniqueKey}
+                      ref={(el) => {
+                        if (el) {
+                          contentRefs.current.set(item.data.id, el)
+                        }
+                      }}
+                      className={`transition-all duration-500 ${
+                        highlightedId === item.data.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                      }`}
+                    >
+                      {item.type === 'post' ? (
+                        <FreeWallCard post={item.data as FreeWallPost} onUpdate={handleFreeWallUpdate} />
+                      ) : (
+                        <RepostCard 
+                          repost={item.data as Repost} 
+                          originalContent={(item.data as Repost).originalContent}
+                          onUpdate={handleFreeWallUpdate} 
+                          onNavigateToContent={handleNavigateToContent}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+                
+                {hasMore && !shouldAutoLoad && (
+                  <div ref={loadMoreTriggerRef} className="py-8 flex justify-center">
+                    {isLoadingMore && (
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Loading more...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {shouldAutoLoad && (
+                  <div className="py-8 flex justify-center">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Loading more...</span>
+                    </div>
+                  </div>
+                )}
+                
+                {!hasMore && freeWallItems.length > 0 && (
+                  <div className="py-8 text-center text-gray-500">
+                    <p className="font-medium">You've reached the end</p>
+                  </div>
+                )}
+                
+                {freeWallItems.length === 0 && !isLoadingFreeWall && (
+                  <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
+                    <p className="text-gray-500 font-medium">No content found.</p>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {activeFeedFilter === "bulletin" && (
+              <>
+                {filteredBulletins.map(bulletin => (
+                  <div
+                    key={bulletin.id}
+                    ref={(el) => {
+                      if (el) {
+                        contentRefs.current.set(bulletin.id, el)
+                      }
+                    }}
+                    className={`transition-all duration-500 ${
+                      highlightedId === bulletin.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                    }`}
+                  >
+                    <BulletinCard bulletin={bulletin} onUpdate={loadBulletins} />
+                  </div>
+                ))}
+                
+                {filteredBulletins.length === 0 && !isLoadingBulletins && (
+                  <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
+                    <p className="text-gray-500 font-medium">No content found.</p>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {activeFeedFilter === "announcements" && (
+              <>
+                {filteredAnnouncements.map(announcement => (
+                  <div
+                    key={announcement.id}
+                    ref={(el) => {
+                      if (el) {
+                        contentRefs.current.set(announcement.id, el)
+                      }
+                    }}
+                    className={`transition-all duration-500 ${
+                      highlightedId === announcement.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                    }`}
+                  >
+                    <AnnouncementCard announcement={announcement} onUpdate={loadAnnouncements} />
+                  </div>
+                ))}
+                
+                {filteredAnnouncements.length === 0 && !isLoadingAnnouncements && (
+                  <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
+                    <p className="text-gray-500 font-medium">No content found.</p>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {activeFeedFilter === "events" && (
+              <>
+                {filteredEvents.map(event => (
+                  <div
+                    key={event.id}
+                    ref={(el) => {
+                      if (el) {
+                        contentRefs.current.set(event.id, el)
+                        event.posts.forEach(post => {
+                          contentRefs.current.set(post.id, el)
+                        })
+                      }
+                    }}
+                    className={`transition-all duration-500 ${
+                      highlightedId === event.id || event.posts.some(p => p.id === highlightedId) ? 'ring-4 ring-blue-400 rounded-2xl' : ''
+                    }`}
+                  >
+                    <EventCard 
+                      event={event}
+                      isPostsHidden={hiddenEvents.has(event.id)}
+                      onToggleHide={(e) => toggleHideEvent(event.id, e)}
+                      onPostCreated={loadEvents}
+                      onEventDeleted={() => handleEventDeleted(event.id)}
                     />
-                  )}
-                </div>
-              ))
-            }
-            
-            {activeFeedFilter === "bulletin" && 
-              filteredBulletins.map(bulletin => (
-                <div
-                  key={bulletin.id}
-                  ref={(el) => {
-                    if (el) {
-                      contentRefs.current.set(bulletin.id, el)
-                    }
-                  }}
-                  className={`transition-all duration-500 ${
-                    highlightedId === bulletin.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
-                  }`}
-                >
-                  <BulletinCard bulletin={bulletin} onUpdate={loadBulletins} />
-                </div>
-              ))
-            }
-            
-            {activeFeedFilter === "announcements" && 
-              filteredAnnouncements.map(announcement => (
-                <div
-                  key={announcement.id}
-                  ref={(el) => {
-                    if (el) {
-                      contentRefs.current.set(announcement.id, el)
-                    }
-                  }}
-                  className={`transition-all duration-500 ${
-                    highlightedId === announcement.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
-                  }`}
-                >
-                  <AnnouncementCard announcement={announcement} onUpdate={loadAnnouncements} />
-                </div>
-              ))
-            }
-            
-            {activeFeedFilter === "events" && 
-              filteredEvents.map(event => (
-                <div
-                  key={event.id}
-                  ref={(el) => {
-                    if (el) {
-                      contentRefs.current.set(event.id, el)
-                      // Also add refs for posts within the event
-                      event.posts.forEach(post => {
-                        contentRefs.current.set(post.id, el)
-                      })
-                    }
-                  }}
-                  className={`transition-all duration-500 ${
-                    highlightedId === event.id || event.posts.some(p => p.id === highlightedId) ? 'ring-4 ring-blue-400 rounded-2xl' : ''
-                  }`}
-                >
-                  <EventCard 
-                    event={event}
-                    isPostsHidden={hiddenEvents.has(event.id)}
-                    onToggleHide={(e) => toggleHideEvent(event.id, e)}
-                    onPostCreated={loadEvents}
-                    onEventDeleted={() => handleEventDeleted(event.id)}
-                  />
-                </div>
-              ))
-            }
-
-            {((activeFeedFilter === "free_wall" && freeWallContent.length === 0) ||
-              (activeFeedFilter === "events" && filteredEvents.length === 0) ||
-              (activeFeedFilter === "announcements" && filteredAnnouncements.length === 0) ||
-              (activeFeedFilter === "bulletin" && filteredBulletins.length === 0)) && (
-              <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
-                <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
-                <p className="text-gray-500 font-medium">No content found.</p>
-              </div>
+                  </div>
+                ))}
+                
+                {filteredEvents.length === 0 && !isLoadingEvents && (
+                  <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <AlertCircle className="h-10 w-10 text-gray-400 mb-2" />
+                    <p className="text-gray-500 font-medium">No content found.</p>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
@@ -834,7 +1278,7 @@ function HomeContent() {
       <CreateFreeWallPostDialog
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
-        onPostCreated={loadFreeWall}
+        onPostCreated={handleFreeWallUpdate}
       />
     </div>
   )

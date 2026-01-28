@@ -1,4 +1,4 @@
-// components/feed/RepostCard.tsx
+// components/feed/RepostCard.tsx - OPTIMIZED with pre-fetched data
 "use client"
 
 import { useState, useEffect } from "react"
@@ -11,6 +11,29 @@ import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
 import { RepostButton } from "@/components/reposts/RepostButton"
 import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
+
+type OriginalContent = {
+  type: 'free_wall_post' | 'post' | 'bulletin' | 'announcement' | 'repost'
+  id: string
+  content?: string
+  header?: string
+  body?: string
+  authorId?: string
+  authorName?: string
+  authorAvatar?: string | null
+  creatorName?: string
+  creatorAvatar?: string | null
+  creatorType?: string
+  imageUrls?: string[]
+  imageUrl?: string | null
+  createdAt: string
+  comment?: string
+  reposterId?: string
+  reposterName?: string
+  reposterAvatar?: string | null
+  contentType?: string
+  contentId?: string
+}
 
 type Repost = {
   id: string
@@ -29,19 +52,19 @@ type Repost = {
 
 interface RepostCardProps {
   repost: Repost
+  originalContent?: OriginalContent | null
   onUpdate?: () => void
   onNavigateToContent?: (tab: string, contentId: string) => void
 }
 
-export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCardProps) {
+export function RepostCard({ repost, originalContent: propOriginalContent, onUpdate, onNavigateToContent }: RepostCardProps) {
   const router = useRouter()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  const [originalContent, setOriginalContent] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [originalContent, setOriginalContent] = useState<OriginalContent | null>(propOriginalContent || null)
   const [showComments, setShowComments] = useState(false)
   const [reactionCount, setReactionCount] = useState(repost.reactionCount || 0)
   const [commentCount, setCommentCount] = useState(repost.comments || 0)
@@ -53,6 +76,13 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
     loadRepostData()
   }, [repost.id])
 
+  // Use prop data if available, otherwise fallback
+  useEffect(() => {
+    if (propOriginalContent) {
+      setOriginalContent(propOriginalContent)
+    }
+  }, [propOriginalContent])
+
   const loadRepostData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -62,7 +92,7 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
         .from('reposts')
         .select('*')
         .eq('id', repost.id)
-        .maybeSingle() // Changed to maybeSingle
+        .maybeSingle()
 
       if (repostData) {
         setReactionCount(repostData.reaction_count || 0)
@@ -70,195 +100,8 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
         setRepostCount(repostData.repost_count || 0)
         setCanEditTags(user?.id === repostData.user_id)
       }
-
-      // Load original content based on type
-      if (repost.contentType === 'free_wall_post') {
-        const { data, error } = await supabase
-          .from('free_wall_posts')
-          .select('*')
-          .eq('id', repost.contentId)
-          .maybeSingle() // Changed to maybeSingle
-
-        if (error) console.error('Error loading free wall post:', error)
-
-        if (data) {
-          const { data: authorData } = await supabase
-            .from('profiles')
-            .select('id, first_name, last_name, avatar_url')
-            .eq('id', data.author_id)
-            .maybeSingle()
-
-          setOriginalContent({
-            type: 'free_wall_post',
-            id: data.id,
-            content: data.content,
-            authorId: authorData?.id,
-            authorName: authorData ? `${authorData.first_name} ${authorData.last_name}` : 'Unknown User',
-            authorAvatar: authorData?.avatar_url || null,
-            imageUrls: data.image_urls || [],
-            createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-            })
-          })
-        }
-      } else if (repost.contentType === 'post') {
-        // --- FIX HERE: Used maybeSingle() instead of single() ---
-        const { data, error } = await supabase
-          .from('posts')
-          .select('*')
-          .eq('id', repost.contentId)
-          .maybeSingle() 
-
-        if (error) {
-          // Only log real errors, not "not found"
-          console.error('Error loading post:', error)
-        }
-
-        if (data) {
-          const { data: authorData } = await supabase
-            .from('profiles')
-            .select('id, first_name, last_name, avatar_url')
-            .eq('id', data.author_id)
-            .maybeSingle()
-
-          setOriginalContent({
-            type: 'post',
-            id: data.id,
-            content: data.content,
-            authorId: authorData?.id,
-            authorName: authorData ? `${authorData.first_name} ${authorData.last_name}` : 'Unknown User',
-            authorAvatar: authorData?.avatar_url || null,
-            imageUrls: data.image_urls || [],
-            createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-            })
-          })
-        }
-      } else if (repost.contentType === 'bulletin') {
-        const { data, error } = await supabase
-          .from('bulletins')
-          .select('*')
-          .eq('id', repost.contentId)
-          .maybeSingle() // Changed to maybeSingle
-
-        if (error) console.error('Error loading bulletin:', error)
-
-        if (data) {
-          let creatorName = "Unknown"
-          let creatorAvatar = null
-          let creatorType = "user"
-          
-          if (data.creator_type === 'faith_admin') {
-            creatorName = "FAITH Administration"
-            creatorType = "faith"
-          } else if (data.creator_type === 'organization' && data.creator_org_id) {
-            const { data: orgData } = await supabase
-              .from('organizations')
-              .select('id, name, avatar_url')
-              .eq('id', data.creator_org_id)
-              .maybeSingle()
-
-            if (orgData) {
-              creatorName = orgData.name
-              creatorAvatar = orgData.avatar_url
-              creatorType = "organization"
-            }
-          }
-
-          setOriginalContent({
-            type: 'bulletin',
-            id: data.id,
-            header: data.header,
-            body: data.body,
-            creatorName,
-            creatorAvatar,
-            creatorType,
-            imageUrls: data.image_urls || [],
-            createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-            })
-          })
-        }
-      } else if (repost.contentType === 'announcement') {
-        const { data, error } = await supabase
-          .from('announcements')
-          .select('*')
-          .eq('id', repost.contentId)
-          .maybeSingle() // Changed to maybeSingle
-
-        if (error) console.error('Error loading announcement:', error)
-
-        if (data) {
-          let creatorName = "Unknown"
-          let creatorAvatar = null
-          let creatorType = "user"
-          
-          if (data.creator_type === 'faith_admin') {
-            creatorName = "FAITH Administration"
-            creatorType = "faith"
-          } else if (data.creator_type === 'organization' && data.creator_org_id) {
-            const { data: orgData } = await supabase
-              .from('organizations')
-              .select('id, name, avatar_url')
-              .eq('id', data.creator_org_id)
-              .maybeSingle()
-
-            if (orgData) {
-              creatorName = orgData.name
-              creatorAvatar = orgData.avatar_url
-              creatorType = "organization"
-            }
-          }
-
-          setOriginalContent({
-            type: 'announcement',
-            id: data.id,
-            header: data.header,
-            body: data.body,
-            creatorName,
-            creatorAvatar,
-            creatorType,
-            imageUrl: data.image_url,
-            createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-            })
-          })
-        }
-      } else if (repost.contentType === 'repost') {
-        const { data, error } = await supabase
-          .from('reposts')
-          .select('*')
-          .eq('id', repost.contentId)
-          .maybeSingle() // Changed to maybeSingle
-
-        if (error) console.error('Error loading nested repost:', error)
-
-        if (data) {
-          const { data: reposterData } = await supabase
-            .from('profiles')
-            .select('id, first_name, last_name, avatar_url')
-            .eq('id', data.user_id)
-            .maybeSingle()
-
-          setOriginalContent({
-            type: 'repost',
-            id: data.id,
-            comment: data.repost_comment,
-            reposterId: reposterData?.id,
-            reposterName: reposterData ? `${reposterData.first_name} ${reposterData.last_name}` : 'Unknown User',
-            reposterAvatar: reposterData?.avatar_url || null,
-            contentType: data.content_type,
-            contentId: data.content_id,
-            createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-            })
-          })
-        }
-      }
     } catch (error) {
       console.error('Error loading repost data:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -306,21 +149,6 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
     } else if (originalContent.type === 'repost') {
       onNavigateToContent('free_wall', originalContent.id)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="bg-white rounded-2xl border-2 border-gray-200 p-6 animate-pulse">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="h-12 w-12 rounded-xl bg-gray-200"></div>
-          <div className="flex-1">
-            <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
-            <div className="h-3 bg-gray-200 rounded w-24"></div>
-          </div>
-        </div>
-        <div className="h-20 bg-gray-200 rounded"></div>
-      </div>
-    )
   }
 
   return (
@@ -435,7 +263,7 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
                       />
                     ) : (
                       <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-sm">
-                        <span className="text-white font-bold text-sm">{getInitials(originalContent.authorName)}</span>
+                        <span className="text-white font-bold text-sm">{getInitials(originalContent.authorName || 'U')}</span>
                       </div>
                     )}
                     <div className="text-left">
@@ -462,7 +290,7 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
                           className="rounded-lg w-full aspect-square object-cover" 
                           onClick={(e) => e.stopPropagation()}
                         />
-                        {idx === 3 && originalContent.imageUrls.length > 4 && (
+                        {idx === 3 && originalContent.imageUrls && originalContent.imageUrls.length > 4 && (
                           <div className="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center">
                             <span className="text-white text-lg font-bold">+{originalContent.imageUrls.length - 4}</span>
                           </div>
@@ -485,11 +313,11 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
                       className="h-10 w-10 rounded-lg object-cover shadow-sm" 
                     />
                   ) : (
-                    <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(originalContent.creatorType)} flex items-center justify-center shadow-sm`}>
-                      {originalContent.creatorType !== 'user' ? (
+                    <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(originalContent.creatorType || 'user')} flex items-center justify-center shadow-sm`}>
+                      {originalContent.creatorType && originalContent.creatorType !== 'user' ? (
                         getCreatorIcon(originalContent.creatorType)
                       ) : (
-                        <span className="text-white font-bold text-sm">{getInitials(originalContent.creatorName)}</span>
+                        <span className="text-white font-bold text-sm">{getInitials(originalContent.creatorName || 'U')}</span>
                       )}
                     </div>
                   )}
@@ -553,7 +381,7 @@ export function RepostCard({ repost, onUpdate, onNavigateToContent }: RepostCard
                       />
                     ) : (
                       <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-sm">
-                        <span className="text-white font-bold text-sm">{getInitials(originalContent.reposterName)}</span>
+                        <span className="text-white font-bold text-sm">{getInitials(originalContent.reposterName || 'U')}</span>
                       </div>
                     )}
                     <div className="text-left">
