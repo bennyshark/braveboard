@@ -372,7 +372,7 @@ export default function ProfilePage() {
           .eq('user_id', profile.id)
           .order('pinned_to_profile', { ascending: false })
           .order('created_at', { ascending: false })
-
+      
         if (repostsData && repostsData.length > 0) {
           for (const repost of repostsData) {
             let contentData = null
@@ -396,31 +396,39 @@ export default function ProfilePage() {
                   )
                 `)
                 .eq('id', repost.content_id)
-                .single()
+                .maybeSingle()  // ← CHANGED FROM .single()
               contentData = data
             } else if (repost.content_type === 'free_wall_post') {
               const { data } = await supabase
                 .from('free_wall_posts')
                 .select('*')
                 .eq('id', repost.content_id)
-                .single()
+                .maybeSingle()  // ← CHANGED FROM .single()
               contentData = data
             } else if (repost.content_type === 'bulletin') {
               const { data } = await supabase
                 .from('bulletins')
                 .select('*')
                 .eq('id', repost.content_id)
-                .single()
+                .maybeSingle()  // ← CHANGED FROM .single()
               contentData = data
             } else if (repost.content_type === 'announcement') {
               const { data } = await supabase
                 .from('announcements')
                 .select('*')
                 .eq('id', repost.content_id)
-                .single()
+                .maybeSingle()  // ← CHANGED FROM .single()
+              contentData = data
+            } else if (repost.content_type === 'repost') {
+              // ← NEW CODE: Handle nested repost
+              const { data } = await supabase
+                .from('reposts')
+                .select('*')
+                .eq('id', repost.content_id)
+                .maybeSingle()
               contentData = data
             }
-
+      
             if (contentData) {
               const eventData = contentData.event ? (Array.isArray(contentData.event) ? contentData.event[0] : contentData.event) : null
               
@@ -429,7 +437,7 @@ export default function ProfilePage() {
                 repost_id: repost.id,
                 type: 'repost' as const,
                 event_id: contentData.event_id || null,
-                content: contentData.content || contentData.body || '',
+                content: contentData.content || contentData.body || contentData.repost_comment || '',  // ← UPDATED: Added repost_comment fallback
                 image_urls: contentData.image_urls || [],
                 likes: contentData.likes || 0,
                 comments: contentData.comments || 0,
