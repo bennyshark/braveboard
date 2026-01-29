@@ -1,4 +1,4 @@
-// components/reposts/RepostButton.tsx - COMPLETE with all content types
+// components/reposts/RepostButton.tsx
 "use client"
 
 import { useState } from "react"
@@ -62,7 +62,7 @@ export function RepostButton({ contentType, contentId, onRepostChange, onRepostC
       else if (repost.content_type === 'bulletin') {
         const { data } = await supabase
           .from('bulletins')
-          .select('*, creator_org:organizations(name)')
+          .select('*, creator_org:organizations(name, avatar_url)')
           .eq('id', repost.content_id)
           .maybeSingle()
 
@@ -75,8 +75,9 @@ export function RepostButton({ contentType, contentId, onRepostChange, onRepostC
         if (data.creator_type === 'faith_admin') {
           creatorName = "FAITH Administration"
           creatorType = "faith"
-        } else if (data.creator_type === 'organization') {
-          creatorName = data.creator_org?.name || "Organization"
+        } else if (data.creator_type === 'organization' && data.creator_org) {
+          creatorName = data.creator_org.name
+          creatorAvatar = data.creator_org.avatar_url
           creatorType = "organization"
         }
 
@@ -99,7 +100,7 @@ export function RepostButton({ contentType, contentId, onRepostChange, onRepostC
       else if (repost.content_type === 'announcement') {
         const { data } = await supabase
           .from('announcements')
-          .select('*, creator_org:organizations(name)')
+          .select('*, creator_org:organizations(name, avatar_url)')
           .eq('id', repost.content_id)
           .maybeSingle()
 
@@ -112,8 +113,9 @@ export function RepostButton({ contentType, contentId, onRepostChange, onRepostC
         if (data.creator_type === 'faith_admin') {
           creatorName = "FAITH Administration"
           creatorType = "faith"
-        } else if (data.creator_type === 'organization') {
-          creatorName = data.creator_org?.name || "Organization"
+        } else if (data.creator_type === 'organization' && data.creator_org) {
+          creatorName = data.creator_org.name
+          creatorAvatar = data.creator_org.avatar_url
           creatorType = "organization"
         }
 
@@ -189,7 +191,7 @@ export function RepostButton({ contentType, contentId, onRepostChange, onRepostC
         }
       }
       
-      // REPOST (nested repost)
+      // REPOST (nested repost) - FIXED: Field order matches OriginalContent type
       else if (repost.content_type === 'repost') {
         const { data: nestedRepost } = await supabase
           .from('reposts')
@@ -211,10 +213,10 @@ export function RepostButton({ contentType, contentId, onRepostChange, onRepostC
         return {
           type: 'repost',
           id: nestedRepost.id,
-          reposterId: nestedRepost.user_id,
+          comment: nestedRepost.repost_comment,
+          reposterId: reposterData?.id,
           reposterName: reposterData ? `${reposterData.first_name} ${reposterData.last_name}` : 'Unknown User',
           reposterAvatar: reposterData?.avatar_url || null,
-          comment: nestedRepost.repost_comment,
           contentType: nestedRepost.content_type,
           contentId: nestedRepost.content_id,
           originalContent: nestedOriginalContent,

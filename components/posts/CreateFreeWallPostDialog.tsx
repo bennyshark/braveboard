@@ -35,7 +35,7 @@ export function CreateFreeWallPostDialog({ isOpen, onClose, onPostCreated }: Cre
       setCurrentUserId(user?.id || null)
     }
     loadUser()
-  }, []) // Fixed: Added dependency array
+  }, []) 
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])

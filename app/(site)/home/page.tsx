@@ -1,4 +1,4 @@
-// app/(site)/home/page.tsx - OPTIMIZED: Direct state updates for create/delete
+// app/(site)/home/page.tsx
 "use client"
 
 import { useState, useEffect, Suspense, useRef } from "react"
@@ -1406,6 +1406,7 @@ function HomeContent() {
                           originalContent={(item.data as Repost).originalContent}
                           onDelete={handleRepostDeleted}
                           onNavigateToContent={handleNavigateToContent}
+                          onRepostCreated={handleRepostCreated}
                         />
                       )}
                     </div>

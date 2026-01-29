@@ -70,7 +70,6 @@ export function EventOptionsMenu({ eventId, onUpdate, onDelete }: EventOptionsMe
       
       setShowMenu(false)
       
-      // Fixed logic: Check if functions exist before calling
       if (onDelete) {
         onDelete()
       } else if (onUpdate) {
