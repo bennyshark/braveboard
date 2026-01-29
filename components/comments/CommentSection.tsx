@@ -1,4 +1,4 @@
-// components/comments/CommentSection.tsx - OPTIMIZED for faster loading
+// components/comments/CommentSection.tsx - FULLY OPTIMIZED WITH CACHE
 "use client"
 import { useState, useEffect, useMemo } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
@@ -6,6 +6,7 @@ import { createBrowserClient } from "@supabase/ssr"
 import { CommentItem } from "./CommentItem"
 import { InlineCommentBox } from "./InlineCommentBox"
 import { AllCommentsModal } from "./AllCommentsModal"
+import { commentCache } from "@/lib/commentCache"
 
 interface CommentSectionProps {
   contentType: 'post' | 'announcement' | 'bulletin' | 'free_wall_post' | 'repost'
@@ -46,39 +47,79 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  const loadComments = async (isRefresh = false) => {
+  const loadComments = async (isRefresh = false, forceRefetch = false) => {
     try {
+      // CACHE CHECK: Return cached data immediately if available
+      if (!forceRefetch) {
+        const cached = commentCache.get(contentType, contentId)
+        if (cached) {
+          console.log(`✅ Using cached comments for ${contentType}:${contentId}`)
+          setComments(cached.comments)
+          setLoading(false)
+          setRefreshing(false)
+          return
+        }
+      }
+
+      console.log(`🔄 Fetching fresh comments for ${contentType}:${contentId}`)
+      
       if (!isRefresh) {
         setLoading(true)
       } else {
         setRefreshing(true)
       }
       
-      // Fetch all data in parallel for better performance
-      const [commentsResult, authorsResult, orgsResult] = await Promise.all([
-        supabase
-          .from('comments')
-          .select('*')
-          .eq('content_type', contentType)
-          .eq('content_id', contentId)
-          .order('created_at', { ascending: true }),
+      // Step 1: Fetch ONLY comments for this content
+      const { data: commentsData, error: commentsError } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('content_type', contentType)
+        .eq('content_id', contentId)
+        .order('created_at', { ascending: true })
+
+      if (commentsError) throw commentsError
+      
+      if (!commentsData || commentsData.length === 0) {
+        const emptyResult: Comment[] = []
+        setComments(emptyResult)
+        // Cache empty result too
+        commentCache.set(contentType, contentId, emptyResult, 0)
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
+      // Step 2: Extract ONLY the unique IDs we need
+      const authorIds = new Set<string>()
+      const orgIds = new Set<string>()
+
+      commentsData.forEach((c: any) => {
+        if (!c.is_deleted && c.content !== '[Comment deleted]') {
+          authorIds.add(c.author_id)
+          if (c.posted_as_type === 'organization' && c.posted_as_org_id) {
+            orgIds.add(c.posted_as_org_id)
+          }
+        }
+      })
+
+      // Step 3: Fetch ONLY needed profiles and orgs (in parallel)
+      const [authorsResult, orgsResult] = await Promise.all([
+        authorIds.size > 0
+          ? supabase
+              .from('profiles')
+              .select('id, first_name, last_name, avatar_url')
+              .in('id', Array.from(authorIds))
+          : Promise.resolve({ data: [] }),
         
-        // Pre-fetch all potential authors
-        supabase
-          .from('profiles')
-          .select('id, first_name, last_name, avatar_url'),
-        
-        // Pre-fetch all potential organizations
-        supabase
-          .from('organizations')
-          .select('id, name, avatar_url')
+        orgIds.size > 0
+          ? supabase
+              .from('organizations')
+              .select('id, name, avatar_url')
+              .in('id', Array.from(orgIds))
+          : Promise.resolve({ data: [] })
       ])
 
-      if (commentsResult.error) throw commentsResult.error
-      
-      const commentsData = commentsResult.data || []
-
-      // Build lookup maps
+      // Step 4: Build lookup maps
       const authorMap = new Map(
         (authorsResult.data || []).map(author => [
           author.id,
@@ -96,12 +137,11 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         ])
       )
 
-      // Build comment tree in a single pass
+      // Step 5: Build comment tree
       const commentMap = new Map<string, Comment>()
       const commentNameMap = new Map<string, string>()
       const topLevelComments: Comment[] = []
 
-      // First pass: Create all comment objects
       commentsData.forEach((c: any) => {
         let displayName = 'Unknown User'
         let displayAvatar = null
@@ -155,7 +195,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         }
       })
 
-      // Second pass: Build tree structure
+      // Build tree structure
       commentMap.forEach(comment => {
         if (comment.parentCommentId) {
           const parent = commentMap.get(comment.parentCommentId)
@@ -163,7 +203,6 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
             comment.replyingToName = commentNameMap.get(comment.parentCommentId) || 'Unknown'
             parent.replies.push(comment)
             
-            // Update parent's most recent reply timestamp
             if (comment.createdAtTimestamp > parent.mostRecentReplyTimestamp!) {
               parent.mostRecentReplyTimestamp = comment.createdAtTimestamp
             }
@@ -171,13 +210,12 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         }
       })
 
-      // Sort replies by timestamp
+      // Sort replies
       const sortReplies = (comment: Comment) => {
         if (comment.replies.length > 0) {
           comment.replies.sort((a, b) => a.createdAtTimestamp - b.createdAtTimestamp)
           comment.replies.forEach(sortReplies)
           
-          // Update mostRecentReplyTimestamp to include nested replies
           const mostRecent = comment.replies.reduce((latest, current) => 
             (current.mostRecentReplyTimestamp || current.createdAtTimestamp) > 
             (latest.mostRecentReplyTimestamp || latest.createdAtTimestamp) ? current : latest
@@ -188,6 +226,17 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
 
       topLevelComments.forEach(sortReplies)
 
+      // Calculate total count
+      let totalCount = 0
+      const countAll = (comment: Comment) => {
+        totalCount++
+        comment.replies.forEach(countAll)
+      }
+      topLevelComments.forEach(countAll)
+
+      // CACHE THE RESULT
+      commentCache.set(contentType, contentId, topLevelComments, totalCount)
+      
       setComments(topLevelComments)
 
     } catch (error) {
@@ -199,12 +248,14 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
   }
 
   useEffect(() => {
-    loadComments()
+    loadComments(false, false) // Don't force refetch on mount, use cache if available
   }, [contentType, contentId])
 
   const handleCommentCreated = () => {
     setShowCommentBox(false)
-    loadComments(true)
+    // Invalidate cache and force refetch
+    commentCache.invalidate(contentType, contentId)
+    loadComments(true, true)
   }
 
   const getPreviewComments = useMemo(() => {
@@ -297,7 +348,10 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
                   contentType={contentType}
                   contentId={contentId}
                   eventId={eventId}
-                  onCommentCreated={() => loadComments(true)}
+                  onCommentCreated={() => {
+                    commentCache.invalidate(contentType, contentId)
+                    loadComments(true, true)
+                  }}
                   isInsideModal={false}
                 />
               </div>
@@ -324,7 +378,10 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         contentType={contentType}
         contentId={contentId}
         eventId={eventId}
-        onCommentCreated={() => loadComments(true)}
+        onCommentCreated={() => {
+          commentCache.invalidate(contentType, contentId)
+          loadComments(true, true)
+        }}
       />
     </>
   )
