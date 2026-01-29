@@ -1,5 +1,4 @@
-// app/(site)/create-event/page.tsx
-// (for reference)
+// app/(site)/edit-event/[id]/page.tsx
 "use client"
 
 import { 
@@ -18,11 +17,10 @@ import {
   AlertCircle,
   Loader2
 } from "lucide-react"
-import { useState, useEffect, Suspense } from "react" // Added Suspense import
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useParams } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 
-// Define Database Types
 type Organization = {
   id: string
   code: string
@@ -40,10 +38,10 @@ type Course = {
   name: string
 }
 
-// --- MAIN FORM COMPONENT (Renamed from CreateEventPage) ---
-function CreateEventForm() {
+function EditEventForm() {
   const router = useRouter()
-  const searchParams = useSearchParams()
+  const params = useParams()
+  const eventId = params.id as string
   
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -54,17 +52,14 @@ function CreateEventForm() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // User State
   const [userId, setUserId] = useState<string | null>(null)
   const [userOrgs, setUserOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   
-  // Reference Data
   const [departments, setDepartments] = useState<Department[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([])
   
-  // --- FORM STATE ---
   const [creatorType, setCreatorType] = useState<'faith_admin' | 'organization'>('faith_admin')
   const [selectedCreatorOrg, setSelectedCreatorOrg] = useState<string>('')
   
@@ -77,25 +72,20 @@ function CreateEventForm() {
   const [tagInput, setTagInput] = useState('')
   const [isPinned, setIsPinned] = useState(false)
   
-  // Participants
   const [participantType, setParticipantType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [partOrgs, setPartOrgs] = useState<string[]>([])
   const [partDepts, setPartDepts] = useState<string[]>([])
   const [partCourses, setPartCourses] = useState<string[]>([])
   const [whoCanPost, setWhoCanPost] = useState<'everyone' | 'officers'>('everyone')
 
-  // Visibility
   const [visibilityType, setVisibilityType] = useState<'public' | 'organization' | 'department' | 'course' | 'mixed'>('public')
   const [visOrgs, setVisOrgs] = useState<string[]>([])
   const [visDepts, setVisDepts] = useState<string[]>([])
   const [visCourses, setVisCourses] = useState<string[]>([])
   
-  // Posting Duration
   const [postingOpenUntil, setPostingOpenUntil] = useState('') 
   const [enableExtendedPosting, setEnableExtendedPosting] = useState(false)
 
-
-  // --- 1. FETCH DATA ---
   useEffect(() => {
     async function loadData() {
       try {
@@ -107,7 +97,6 @@ function CreateEventForm() {
         }
         setUserId(user.id)
 
-        // Check Admin
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
@@ -117,7 +106,6 @@ function CreateEventForm() {
         const isAdmin = profile?.role === 'admin'
         setIsFaithAdmin(isAdmin)
 
-        // Check Memberships
         const { data: memberships } = await supabase
           .from('user_organizations')
           .select(`role, organization:organizations!inner(id, code, name)`)
@@ -133,7 +121,6 @@ function CreateEventForm() {
 
         setUserOrgs(formattedOrgs)
 
-        // Reference Data
         const [deptRes, courseRes, orgRes] = await Promise.all([
           supabase.from('departments').select('code, name'),
           supabase.from('courses').select('code, name'),
@@ -143,107 +130,102 @@ function CreateEventForm() {
         if (deptRes.data) setDepartments(deptRes.data)
         if (courseRes.data) setCourses(courseRes.data)
         if (orgRes.data) setAllOrganizations(orgRes.data.map((o: any) => ({ ...o, role: '' })))
+
+        // Load event data
+        const { data: eventData, error: eventError } = await supabase
+          .from('events')
+          .select('*')
+          .eq('id', eventId)
+          .single()
+
+        if (eventError) throw eventError
+
+        // Pre-fill form with existing data
+        setTitle(eventData.title)
+        setDescription(eventData.description || '')
+        setStartDate(eventData.start_date.slice(0, 16))
+        setEndDate(eventData.end_date.slice(0, 16))
+        setLocation(eventData.location || '')
+        setTags(eventData.tags || [])
+        setIsPinned(eventData.is_pinned || false)
         
+        setCreatorType(eventData.creator_type)
+        setSelectedCreatorOrg(eventData.creator_org_id || '')
+        
+        setParticipantType(eventData.participant_type)
+        setPartOrgs(eventData.participant_orgs || [])
+        setPartDepts(eventData.participant_depts || [])
+        setPartCourses(eventData.participant_courses || [])
+        setWhoCanPost(eventData.who_can_post)
+        
+        setVisibilityType(eventData.visibility_type)
+        setVisOrgs(eventData.visibility_orgs || [])
+        setVisDepts(eventData.visibility_depts || [])
+        setVisCourses(eventData.visibility_courses || [])
+        
+        if (eventData.posting_open_until) {
+          setEnableExtendedPosting(true)
+          setPostingOpenUntil(eventData.posting_open_until.slice(0, 16))
+        }
+
         setDataLoaded(true)
 
       } catch (error) {
         console.error('Error loading data:', error)
+        alert('Failed to load event data')
+        router.push('/home')
       } finally {
         setLoading(false)
       }
     }
     loadData()
-  }, [router, supabase])
+  }, [eventId, router, supabase])
 
-  // --- 2. APPLY SELECTION LOGIC ---
   useEffect(() => {
     if (!dataLoaded) return
 
-    const paramType = searchParams.get('type')
-    const paramOrgId = searchParams.get('orgId')
-    
-    let initialCreatorType: 'faith_admin' | 'organization' = 'faith_admin'
-    let initialOrgId = ''
-    let initialPartType: any = 'public'
-
-    if (paramType === 'organization' && paramOrgId && userOrgs.find(o => o.id === paramOrgId)) {
-      initialCreatorType = 'organization'
-      initialOrgId = paramOrgId
-      initialPartType = 'organization'
-      setPartOrgs([paramOrgId])
-    } 
-    else if (paramType === 'faith_admin' && isFaithAdmin) {
-      initialCreatorType = 'faith_admin'
-      initialPartType = 'public'
-    } 
-    else if (!isFaithAdmin && userOrgs.length > 0) {
-      initialCreatorType = 'organization'
-      initialOrgId = userOrgs[0].id
-      initialPartType = 'organization'
-      setPartOrgs([userOrgs[0].id])
-    }
-    else {
-      initialCreatorType = 'faith_admin'
-      initialPartType = 'public'
-    }
-
-    setCreatorType(initialCreatorType)
-    setSelectedCreatorOrg(initialOrgId)
-    setParticipantType(initialPartType)
-
-  }, [dataLoaded, searchParams, userOrgs, isFaithAdmin])
-
-// --- HANDLERS ---
-useEffect(() => {
-  if (!dataLoaded) return
-
-  if (creatorType === 'organization' && selectedCreatorOrg) {
-     if (participantType === 'public' || participantType === 'organization') {
+    if (creatorType === 'organization' && selectedCreatorOrg) {
+      if (participantType === 'public' || participantType === 'organization') {
         setParticipantType('organization')
         if (!partOrgs.includes(selectedCreatorOrg)) {
-           setPartOrgs([selectedCreatorOrg]) // Reset list to just this org
+          setPartOrgs([selectedCreatorOrg])
         }
-     }
-  } else if (creatorType === 'faith_admin') {
-     if (participantType === 'organization') {
+      }
+    } else if (creatorType === 'faith_admin') {
+      if (participantType === 'organization') {
         setParticipantType('public')
         setPartOrgs([])
-     }
-  }
-}, [creatorType, selectedCreatorOrg])
+      }
+    }
+  }, [creatorType, selectedCreatorOrg, dataLoaded])
 
-// Reset participant selections when type changes
-useEffect(() => {
-  if (!dataLoaded) return
-  
-  // Reset ALL selections whenever participant type changes
-  if (participantType === 'public') {
-    setPartOrgs([])
-    setPartDepts([])
-    setPartCourses([])
-  } else if (participantType === 'organization' || participantType === 'mixed') {
-    // Keep creator org if applicable, clear everything else
-    const keepOrg = (creatorType === 'organization' && selectedCreatorOrg) ? [selectedCreatorOrg] : []
-    setPartOrgs(keepOrg)
-    setPartDepts([])
-    setPartCourses([])
-  } else {
-    // For department or course mode: clear EVERYTHING
-    setPartOrgs([])
-    setPartDepts([])
-    setPartCourses([])
-  }
-}, [participantType, dataLoaded])
+  useEffect(() => {
+    if (!dataLoaded) return
+    
+    if (participantType === 'public') {
+      setPartOrgs([])
+      setPartDepts([])
+      setPartCourses([])
+    } else if (participantType === 'organization' || participantType === 'mixed') {
+      const keepOrg = (creatorType === 'organization' && selectedCreatorOrg) ? [selectedCreatorOrg] : []
+      setPartOrgs(keepOrg)
+      setPartDepts([])
+      setPartCourses([])
+    } else {
+      setPartOrgs([])
+      setPartDepts([])
+      setPartCourses([])
+    }
+  }, [participantType, dataLoaded])
 
-// Reset visibility selections when type changes
-useEffect(() => {
-  if (!dataLoaded) return
-  
-  // Reset ALL visibility selections whenever type changes
-  setVisOrgs([])
-  setVisDepts([])
-  setVisCourses([])
-}, [visibilityType, dataLoaded])
+  useEffect(() => {
+    if (!dataLoaded) return
+    
+    setVisOrgs([])
+    setVisDepts([])
+    setVisCourses([])
+  }, [visibilityType, dataLoaded])
+
   const addTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
       setTags([...tags, tagInput.trim()])
@@ -263,99 +245,96 @@ useEffect(() => {
     }
   }
 
-// In create-event/page.tsx - UPDATE the handleSubmit function with title validation
+// In edit-event/[id]/page.tsx - UPDATE the handleSubmit function
 
 const handleSubmit = async () => {
-  if (!userId) return
+    if (!userId) return
 
-  // Validation
-  if (!title.trim()) { alert('Please enter an event title'); return }
-  if (creatorType === 'organization' && !selectedCreatorOrg) { alert('Please select an organization'); return }
-  if (!startDate || !endDate) { alert('Please select both start and end dates'); return }
-  
-  const start = new Date(startDate)
-  const end = new Date(endDate)
+    if (!title.trim()) { alert('Please enter an event title'); return }
+    if (creatorType === 'organization' && !selectedCreatorOrg) { alert('Please select an organization'); return }
+    if (!startDate || !endDate) { alert('Please select both start and end dates'); return }
+    
+    const start = new Date(startDate)
+    const end = new Date(endDate)
 
-  // Rule 1: Start < End
-  if (start >= end) { alert('Start date must be earlier than the end date'); return }
-  
-  // NEW: Check for duplicate event title
-  const { data: existingEvent } = await supabase
-    .from('events')
-    .select('id')
-    .eq('title', title.trim())
-    .single()
+    if (start >= end) { alert('Start date must be earlier than the end date'); return }
+    
+    // NEW: Check for duplicate event title (excluding current event)
+    const { data: existingEvent } = await supabase
+      .from('events')
+      .select('id')
+      .eq('title', title.trim())
+      .neq('id', eventId)
+      .single()
 
-  if (existingEvent) {
-    alert('An event with this title already exists. Please choose a different title.')
-    return
-  }
-  
-  // Check Participants
-  if (participantType !== 'public') {
-    const hasPartSelection = partOrgs.length > 0 || partDepts.length > 0 || partCourses.length > 0
-    if (!hasPartSelection) { alert('Please select at least one participant group (Org, Dept, or Course)'); return }
-  }
-
-  // Check Visibility
-  if (visibilityType !== 'public') {
-    const hasVisSelection = visOrgs.length > 0 || visDepts.length > 0 || visCourses.length > 0
-    if (!hasVisSelection) { alert('Please select at least one visibility group'); return }
-  }
-  
-  let finalPostingDate = null
-  if (enableExtendedPosting && postingOpenUntil) {
-    const postingEnd = new Date(postingOpenUntil)
-    // Rule 2: Extended Posting > End Date
-    if (postingEnd <= end) { 
-      alert('Extended posting period must be AFTER the event end date.'); 
-      return 
+    if (existingEvent) {
+      alert('An event with this title already exists. Please choose a different title.')
+      return
     }
-    finalPostingDate = postingOpenUntil
-  }
-
-  // --- Submission ---
-  setIsSubmitting(true)
-  try {
-    const eventData = {
-      title: title.trim(),
-      description: description.trim(),
-      created_by: userId,
-      creator_type: creatorType,
-      creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
-      start_date: startDate,
-      end_date: endDate,
-      location: location.trim() || null,
-      tags: tags,
-      visibility_type: visibilityType,
-      visibility_orgs: visOrgs,
-      visibility_depts: visDepts,
-      visibility_courses: visCourses,
-      participant_type: participantType,
-      participant_orgs: partOrgs,
-      participant_depts: partDepts,
-      participant_courses: partCourses,
-      who_can_post: whoCanPost,
-      posting_open_until: finalPostingDate,
-      is_pinned: isPinned && isFaithAdmin, 
+    
+    if (participantType !== 'public') {
+      const hasPartSelection = partOrgs.length > 0 || partDepts.length > 0 || partCourses.length > 0
+      if (!hasPartSelection) { alert('Please select at least one participant group'); return }
     }
 
-    console.log('Submitting:', eventData)
+    if (visibilityType !== 'public') {
+      const hasVisSelection = visOrgs.length > 0 || visDepts.length > 0 || visCourses.length > 0
+      if (!hasVisSelection) { alert('Please select at least one visibility group'); return }
+    }
+    
+    let finalPostingDate = null
+    if (enableExtendedPosting && postingOpenUntil) {
+      const postingEnd = new Date(postingOpenUntil)
+      if (postingEnd <= end) { 
+        alert('Extended posting period must be AFTER the event end date.'); 
+        return 
+      }
+      finalPostingDate = postingOpenUntil
+    }
 
-    const { error } = await supabase.from('events').insert(eventData)
-    if (error) throw error
+    setIsSubmitting(true)
+    try {
+      const eventData = {
+        title: title.trim(),
+        description: description.trim(),
+        creator_type: creatorType,
+        creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
+        start_date: startDate,
+        end_date: endDate,
+        location: location.trim() || null,
+        tags: tags,
+        visibility_type: visibilityType,
+        visibility_orgs: visOrgs,
+        visibility_depts: visDepts,
+        visibility_courses: visCourses,
+        participant_type: participantType,
+        participant_orgs: partOrgs,
+        participant_depts: partDepts,
+        participant_courses: partCourses,
+        who_can_post: whoCanPost,
+        posting_open_until: finalPostingDate,
+        is_pinned: isPinned && isFaithAdmin,
+        updated_at: new Date().toISOString()
+      }
 
-    alert('Event created successfully!')
-    // FIX: Use router.replace to avoid back button going to create page
-    router.replace('/home?tab=events')
+      const { error } = await supabase
+        .from('events')
+        .update(eventData)
+        .eq('id', eventId)
 
-  } catch (error: any) {
-    console.error('Error creating event:', error)
-    alert(`Failed: ${error.message}`)
-  } finally {
-    setIsSubmitting(false)
+      if (error) throw error
+
+      alert('Event updated successfully!')
+      // FIX: Use router.replace to avoid back button issue
+      router.replace(`/event/${eventId}`)
+
+    } catch (error: any) {
+      console.error('Error updating event:', error)
+      alert(`Failed: ${error.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
-}
 
   const renderSelectionList = (
     items: { id?: string, code?: string, name: string }[], 
@@ -391,26 +370,25 @@ const handleSubmit = async () => {
     <div className="max-w-4xl mx-auto py-10 px-4">
       <div className="mb-8">
         <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 mb-4"><ArrowLeft className="h-5 w-5" /> Back</button>
-        <h1 className="text-4xl font-black text-gray-900 mb-2">Create Event</h1>
+        <h1 className="text-4xl font-black text-gray-900 mb-2">Edit Event</h1>
       </div>
 
       <div className="space-y-6">
         
-        {/* 1. CREATOR IDENTITY */}
         {(isFaithAdmin || userOrgs.length > 0) && (
           <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
-            <label className="block text-sm font-bold text-gray-900 mb-3">Creating event as:</label>
+            <label className="block text-sm font-bold text-gray-900 mb-3">Event creator:</label>
             <div className="space-y-2">
               {isFaithAdmin && (
                 <label className="flex items-center gap-3 p-4 border-2 border-purple-200 rounded-lg cursor-pointer hover:bg-purple-50">
-                  <input type="radio" checked={creatorType === 'faith_admin'} onChange={() => setCreatorType('faith_admin')} className="w-4 h-4" />
+                  <input type="radio" checked={creatorType === 'faith_admin'} onChange={() => setCreatorType('faith_admin')} className="w-4 h-4" disabled />
                   <div className="flex items-center gap-2"><Shield className="h-5 w-5 text-purple-600" /><span className="font-bold text-gray-900">FAITH Administration</span></div>
                 </label>
               )}
               {userOrgs.map(org => (
                 <label key={org.id} className="flex items-center gap-3 p-4 border-2 border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50">
                   <input type="radio" checked={creatorType === 'organization' && selectedCreatorOrg === org.id} 
-                    onChange={() => { setCreatorType('organization'); setSelectedCreatorOrg(org.id) }} className="w-4 h-4" />
+                    onChange={() => { setCreatorType('organization'); setSelectedCreatorOrg(org.id) }} className="w-4 h-4" disabled />
                   <div className="flex items-center gap-2">
                     <Users className="h-5 w-5 text-orange-600" /><span className="font-bold text-gray-900">{org.name}</span>
                     <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-bold">{org.role}</span>
@@ -418,10 +396,10 @@ const handleSubmit = async () => {
                 </label>
               ))}
             </div>
+            <p className="text-xs text-gray-500 mt-2">Creator cannot be changed after event is created</p>
           </div>
         )}
 
-        {/* 2. BASIC INFO */}
         <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
           <h3 className="text-lg font-black text-gray-900 mb-4">Event Details</h3>
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event Title *" className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg" />
@@ -432,11 +410,11 @@ const handleSubmit = async () => {
             <div><label className="block text-sm font-bold mb-1">End Date *</label><input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg" /></div>
           </div>
           
-           <div className="flex items-start gap-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
-             <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-             <p className="text-xs text-blue-800">
-               <strong>Note:</strong> By default, posting is only allowed between the <strong>Start Date</strong> and <strong>End Date</strong>. You can extend this in the "Posting Settings" section below.
-             </p>
+          <div className="flex items-start gap-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-blue-800">
+              <strong>Note:</strong> By default, posting is only allowed between the <strong>Start Date</strong> and <strong>End Date</strong>. You can extend this in the "Posting Settings" section below.
+            </p>
           </div>
           
           <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Location" className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg" />
@@ -450,7 +428,6 @@ const handleSubmit = async () => {
           </div>
         </div>
 
-        {/* 3. EVENT PARTICIPANTS (Who can POST) */}
         <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
           <div className="flex items-start gap-3 mb-2">
             <h3 className="text-lg font-black text-gray-900 flex-1">Event Participants</h3>
@@ -478,14 +455,13 @@ const handleSubmit = async () => {
           {(participantType === 'course' || participantType === 'mixed') && renderSelectionList(courses, partCourses, setPartCourses, 'bg-purple-50 border-purple-200')}
         </div>
 
-        {/* 4. AUDIENCE VISIBILITY (Who can SEE) */}
         <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
           <div className="flex items-center justify-between mb-2">
-             <h3 className="text-lg font-black text-gray-900">Audience Visibility</h3>
-             {visibilityType === 'public' ? 
-                <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full"><Globe className="h-3 w-3" /> Public</span> : 
-                <span className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 px-2 py-1 rounded-full"><Lock className="h-3 w-3" /> Restricted</span>
-             }
+            <h3 className="text-lg font-black text-gray-900">Audience Visibility</h3>
+            {visibilityType === 'public' ? 
+              <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full"><Globe className="h-3 w-3" /> Public</span> : 
+              <span className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 px-2 py-1 rounded-full"><Lock className="h-3 w-3" /> Restricted</span>
+            }
           </div>
           <p className="text-sm text-gray-500 mb-4">By default, events are public. Click below to restrict who can see this.</p>
 
@@ -495,45 +471,44 @@ const handleSubmit = async () => {
           </div>
 
           {visibilityType !== 'public' && (
-             <div className="mt-4 p-4 border border-red-200 rounded-lg bg-red-50">
-                <h4 className="font-bold text-red-900 mb-2">Select Allowed Viewers:</h4>
-                <div className="space-y-4">
-                   {renderSelectionList(allOrganizations, visOrgs, setVisOrgs, 'bg-white', selectedCreatorOrg)}
-                   {renderSelectionList(departments, visDepts, setVisDepts, 'bg-white')}
-                   {renderSelectionList(courses, visCourses, setVisCourses, 'bg-white')}
-                </div>
-             </div>
+            <div className="mt-4 p-4 border border-red-200 rounded-lg bg-red-50">
+              <h4 className="font-bold text-red-900 mb-2">Select Allowed Viewers:</h4>
+              <div className="space-y-4">
+                {renderSelectionList(allOrganizations, visOrgs, setVisOrgs, 'bg-white', selectedCreatorOrg)}
+                {renderSelectionList(departments, visDepts, setVisDepts, 'bg-white')}
+                {renderSelectionList(courses, visCourses, setVisCourses, 'bg-white')}
+              </div>
+            </div>
           )}
         </div>
 
-        {/* 5. POSTING SETTINGS */}
         <div className="bg-white rounded-xl border-2 border-gray-200 p-6 space-y-4">
           <h3 className="text-lg font-black text-gray-900">Posting Settings</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className={`p-4 border-2 rounded-xl cursor-pointer ${whoCanPost === 'everyone' ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}>
-               <div className="flex justify-between"><span className="font-bold text-gray-900">All Participants</span><input type="radio" checked={whoCanPost === 'everyone'} onChange={() => setWhoCanPost('everyone')} /></div>
-               <p className="text-xs text-gray-600 mt-1">Anyone in the participant list can post.</p>
+              <div className="flex justify-between"><span className="font-bold text-gray-900">All Participants</span><input type="radio" checked={whoCanPost === 'everyone'} onChange={() => setWhoCanPost('everyone')} /></div>
+              <p className="text-xs text-gray-600 mt-1">Anyone in the participant list can post.</p>
             </label>
             <label className={`p-4 border-2 rounded-xl cursor-pointer ${whoCanPost === 'officers' ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}>
-               <div className="flex justify-between"><span className="font-bold text-gray-900">Admins/Officers Only</span><input type="radio" checked={whoCanPost === 'officers'} onChange={() => setWhoCanPost('officers')} /></div>
-               <p className="text-xs text-gray-600 mt-1">Participants can view only.</p>
+              <div className="flex justify-between"><span className="font-bold text-gray-900">Admins/Officers Only</span><input type="radio" checked={whoCanPost === 'officers'} onChange={() => setWhoCanPost('officers')} /></div>
+              <p className="text-xs text-gray-600 mt-1">Participants can view only.</p>
             </label>
           </div>
           
           <div className="mt-4 pt-4 border-t border-gray-100">
-             <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={enableExtendedPosting} onChange={() => setEnableExtendedPosting(!enableExtendedPosting)} className="w-4 h-4" />
-                <span className="text-sm font-bold">Extended Posting Period</span>
-             </label>
-             {enableExtendedPosting && (
-                <div className="mt-2">
-                  <input type="datetime-local" value={postingOpenUntil} onChange={(e) => setPostingOpenUntil(e.target.value)} className="w-full px-3 py-2 border rounded" />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Users can continue posting until this date, even after the event ends.<br/>
-                    <span className="text-red-500 font-bold">* Must be after the event End Date.</span>
-                  </p>
-                </div>
-             )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={enableExtendedPosting} onChange={() => setEnableExtendedPosting(!enableExtendedPosting)} className="w-4 h-4" />
+              <span className="text-sm font-bold">Extended Posting Period</span>
+            </label>
+            {enableExtendedPosting && (
+              <div className="mt-2">
+                <input type="datetime-local" value={postingOpenUntil} onChange={(e) => setPostingOpenUntil(e.target.value)} className="w-full px-3 py-2 border rounded" />
+                <p className="text-xs text-gray-500 mt-1">
+                  Users can continue posting until this date, even after the event ends.<br/>
+                  <span className="text-red-500 font-bold">* Must be after the event End Date.</span>
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -545,8 +520,8 @@ const handleSubmit = async () => {
 
         <div className="flex gap-3 pt-4">
           <button type="button" onClick={() => router.back()} disabled={isSubmitting} className="flex-1 py-4 bg-white border-2 border-gray-300 rounded-xl font-bold">Cancel</button>
-          <button type="button" onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-bold flex justify-center gap-2">
-            {isSubmitting ? <Loader2 className="animate-spin" /> : <><Save className="h-5 w-5" /> Create Event</>}
+          <button type="button" onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-bold flex justify-center gap-2">
+            {isSubmitting ? <Loader2 className="animate-spin" /> : <><Save className="h-5 w-5" /> Update Event</>}
           </button>
         </div>
       </div>
@@ -554,15 +529,14 @@ const handleSubmit = async () => {
   )
 }
 
-// --- MAIN PAGE WRAPPER (REQUIRED FOR SUSPENSE) ---
-export default function CreateEventPage() {
+export default function EditEventPage() {
   return (
     <Suspense fallback={
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
       </div>
     }>
-      <CreateEventForm />
+      <EditEventForm />
     </Suspense>
   )
 }

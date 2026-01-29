@@ -25,9 +25,8 @@ export function FeedFilters({
     { id: "lighthouse", name: "Lighthouse" },
   ]
 
-  // --- ORGANIZATION FILTER ---
-  if (activeFilter === "org") {
-    // Logic to filter the "pills" based on the search input
+  // --- BULLETIN & EVENTS FILTER (Both have org filtering) ---
+  if (activeFilter === "bulletin" || activeFilter === "events") {
     const filteredOrgs = organizations.filter(org => 
       org.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
       org.code.toLowerCase().includes(searchTerm.toLowerCase())
@@ -37,19 +36,15 @@ export function FeedFilters({
       <div className="sticky top-0 z-10 mb-6 py-2 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           
-          {/* Left Side: Label & Scrollable List */}
           <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
             <div className="flex items-center gap-2 text-gray-500 flex-shrink-0">
               <Filter className="h-4 w-4" />
-              <span className="text-xs font-bold uppercase tracking-wider">Filter</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Filter by Org</span>
             </div>
 
             <div className="h-6 w-px bg-gray-300 flex-shrink-0 mx-1"></div>
 
-            {/* Scrollable Container */}
             <div className="flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-              {/* Always show 'All Orgs' unless we are filtering heavily? 
-                  Keeping it visible allows easy reset without deleting text manually */}
               <button
                 onClick={() => setSelectedOrg(null)}
                 className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 border ${
@@ -61,7 +56,6 @@ export function FeedFilters({
                 All Orgs
               </button>
 
-              {/* RENDER FILTERED ORGANIZATIONS */}
               {filteredOrgs.map(org => (
                 <button
                   key={org.id}
@@ -76,7 +70,6 @@ export function FeedFilters({
                 </button>
               ))}
 
-              {/* Empty State for Filters */}
               {filteredOrgs.length === 0 && (
                 <span className="text-xs text-gray-400 italic whitespace-nowrap pl-2">
                   No orgs match "{searchTerm}"
@@ -84,11 +77,9 @@ export function FeedFilters({
               )}
             </div>
             
-            {/* Gradient fade */}
             <div className="w-8 h-full absolute right-0 md:right-auto md:left-[60%] bg-gradient-to-l from-gray-50 to-transparent pointer-events-none md:hidden"></div>
           </div>
           
-          {/* Right Side: Search */}
           <div className="relative flex-shrink-0 w-full md:w-auto">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <input

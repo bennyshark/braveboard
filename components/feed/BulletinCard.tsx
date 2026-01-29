@@ -1,10 +1,10 @@
-// components/feed/AnnouncementCard.tsx - OPTIMIZED to use pre-fetched data
+// components/feed/BulletinCard.tsx - OPTIMIZED to use pre-fetched data
 "use client"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users } from "lucide-react"
-import { AnnouncementOptionsMenu } from "@/components/menus/AnnouncementOptionsMenu"
+import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users, Image } from "lucide-react"
+import { BulletinOptionsMenu } from "@/components/menus/BulletinOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
@@ -13,13 +13,13 @@ import { RepostButton } from "@/components/reposts/RepostButton"
 import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
 import { createBrowserClient } from "@supabase/ssr"
 
-type Announcement = {
+type Bulletin = {
   id: string
   header: string
   body: string
   organizerType: string
   organizerName: string
-  imageUrl: string | null
+  imageUrls: string[]
   isPinned: boolean
   likes: number
   comments: number
@@ -31,19 +31,20 @@ type Announcement = {
   taggedUsersCount?: number // OPTIMIZED: Pre-fetched
 }
 
-interface AnnouncementCardProps {
-  announcement: Announcement
+interface BulletinCardProps {
+  bulletin: Bulletin
   onUpdate?: () => void
 }
 
-export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardProps) {
+export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
   
   // OPTIMIZED: Initialize with prop data
-  const [reactionCount, setReactionCount] = useState(announcement.reactionCount || 0)
-  const [repostCount, setRepostCount] = useState(announcement.repostCount || 0)
+  const [reactionCount, setReactionCount] = useState(bulletin.reactionCount || 0)
+  const [repostCount, setRepostCount] = useState(bulletin.repostCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
@@ -54,9 +55,9 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   )
 
   useEffect(() => {
-    // OPTIMIZED: Only fetch user data, not announcement data
+    // OPTIMIZED: Only fetch user data, not bulletin data
     loadUserData()
-  }, [announcement.id])
+  }, [bulletin.id])
 
   const loadUserData = async () => {
     try {
@@ -64,18 +65,18 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
       setCurrentUserId(user?.id || null)
       
       // OPTIMIZED: Use pre-fetched createdBy if available
-      if (announcement.createdBy) {
-        setCanEditTags(user?.id === announcement.createdBy)
+      if (bulletin.createdBy) {
+        setCanEditTags(user?.id === bulletin.createdBy)
       } else {
         // Fallback: fetch if not provided
-        const { data: announcementData } = await supabase
-          .from('announcements')
+        const { data: bulletinData } = await supabase
+          .from('bulletins')
           .select('created_by')
-          .eq('id', announcement.id)
+          .eq('id', bulletin.id)
           .single()
 
-        if (announcementData) {
-          setCanEditTags(user?.id === announcementData.created_by)
+        if (bulletinData) {
+          setCanEditTags(user?.id === bulletinData.created_by)
         }
       }
     } catch (error) {
@@ -86,15 +87,15 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   const loadData = async () => {
     try {
       // OPTIMIZED: Only refetch when data changes (after reactions/reposts)
-      const { data: announcementData } = await supabase
-        .from('announcements')
+      const { data: bulletinData } = await supabase
+        .from('bulletins')
         .select('reaction_count, repost_count')
-        .eq('id', announcement.id)
+        .eq('id', bulletin.id)
         .single()
 
-      if (announcementData) {
-        setReactionCount(announcementData.reaction_count || 0)
-        setRepostCount(announcementData.repost_count || 0)
+      if (bulletinData) {
+        setReactionCount(bulletinData.reaction_count || 0)
+        setRepostCount(bulletinData.repost_count || 0)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -104,6 +105,11 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   const handleReactionChange = () => {
     loadData()
     setRefreshTrigger(prev => prev + 1)
+  }
+
+  const handleImageClick = (index: number) => {
+    setPreviewIndex(index)
+    setPreviewOpen(true)
   }
 
   const getOrganizerColor = (type: string) => {
@@ -118,27 +124,25 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
     switch(type) {
       case "faith": return <Shield className="h-5 w-5 text-white" />
       case "organization": return <Users className="h-5 w-5 text-white" />
-      default: return "📢"
+      default: return "📋"
     }
   }
-
-  const images = announcement.imageUrl ? [announcement.imageUrl] : []
 
   return (
     <>
       <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
         <div className="p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)} flex items-center justify-center flex-shrink-0 shadow-md`}>
-              {getOrganizerIcon(announcement.organizerType)}
+            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)} flex items-center justify-center flex-shrink-0 shadow-md`}>
+              {getOrganizerIcon(bulletin.organizerType)}
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h5 className="font-bold text-gray-900">{announcement.organizerName}</h5>
-                    {announcement.isPinned && (
+                    <h5 className="font-bold text-gray-900">{bulletin.organizerName}</h5>
+                    {bulletin.isPinned && (
                       <span className="inline-flex items-center gap-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-xs font-bold">
                         <Pin className="h-3 w-3 fill-current" />
                         Pinned
@@ -148,12 +152,21 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                   
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
-                    <span>{announcement.createdAt}</span>
+                    <span>{bulletin.createdAt}</span>
+                    {bulletin.imageUrls.length > 0 && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Image className="h-3 w-3" />
+                          {bulletin.imageUrls.length}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <AnnouncementOptionsMenu
-                  announcementId={announcement.id}
+                <BulletinOptionsMenu
+                  bulletinId={bulletin.id}
                   onUpdate={() => {
                     if (onUpdate) onUpdate()
                   }}
@@ -166,45 +179,61 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
             {/* OPTIMIZED: Tagged Users Display with pre-fetched count */}
             <div className="mb-3">
               <TaggedUsersDisplay
-                contentType="announcement"
-                contentId={announcement.id}
+                contentType="bulletin"
+                contentId={bulletin.id}
                 canEdit={canEditTags}
                 onTagsUpdated={loadData}
-                initialCount={announcement.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
+                initialCount={bulletin.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
               />
             </div>
 
             <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
-              {announcement.header}
+              {bulletin.header}
             </h3>
             
             <p className="text-gray-700 leading-relaxed whitespace-pre-wrap mb-4">
-              {announcement.body}
+              {bulletin.body}
             </p>
 
-            {announcement.imageUrl && (
-              <div 
-                className="relative rounded-xl overflow-hidden bg-gray-100 mb-4 cursor-pointer group"
-                onClick={() => setPreviewOpen(true)}
-              >
-                <img 
-                  src={announcement.imageUrl} 
-                  alt={announcement.header}
-                  className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+            {bulletin.imageUrls.length > 0 && (
+              <div className={`mb-4 ${
+                bulletin.imageUrls.length === 1 ? 'grid grid-cols-1' :
+                bulletin.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
+                'grid grid-cols-2 gap-2'
+              }`}>
+                {bulletin.imageUrls.slice(0, 4).map((url, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`relative overflow-hidden rounded-lg bg-gray-100 cursor-pointer group ${
+                      bulletin.imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
+                    }`}
+                    onClick={() => handleImageClick(idx)}
+                  >
+                    <img 
+                      src={url} 
+                      alt={`${bulletin.header} - Image ${idx + 1}`}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                    {idx === 3 && bulletin.imageUrls.length > 4 && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <span className="text-white text-2xl font-bold">+{bulletin.imageUrls.length - 4}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 
             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
               <div className="flex items-center gap-1">
                 <ReactionButton 
-                  contentType="announcement"
-                  contentId={announcement.id}
+                  contentType="bulletin"
+                  contentId={bulletin.id}
                   onReactionChange={handleReactionChange}
                 />
                 
-                {announcement.allowComments && (
+                {bulletin.allowComments && (
                   <button 
                     onClick={() => setShowComments(!showComments)}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
@@ -214,7 +243,7 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                     }`}
                   >
                     <MessageCircle className="h-3.5 w-3.5" />
-                    <span className="text-xs font-bold">{announcement.comments}</span>
+                    <span className="text-xs font-bold">{bulletin.comments}</span>
                     {showComments ? (
                       <ChevronUp className="h-3 w-3" />
                     ) : (
@@ -224,8 +253,8 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                 )}
 
                 <RepostButton
-                  contentType="announcement"
-                  contentId={announcement.id}
+                  contentType="bulletin"
+                  contentId={bulletin.id}
                   onRepostChange={handleReactionChange}
                 />
               </div>
@@ -235,8 +264,8 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                   <span className="text-xs text-gray-500">{repostCount} reposts</span>
                 )}
                 <ReactionSummary 
-                  contentType="announcement"
-                  contentId={announcement.id}
+                  contentType="bulletin"
+                  contentId={bulletin.id}
                   totalCount={reactionCount}
                   refreshTrigger={refreshTrigger}
                 />
@@ -245,21 +274,21 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
           </div>
         </div>
 
-        {announcement.allowComments && showComments && (
+        {bulletin.allowComments && showComments && (
           <div className="border-t border-gray-200 p-4 bg-gray-50">
             <CommentSection 
-              contentType="announcement"
-              contentId={announcement.id}
-              initialCount={announcement.comments}
+              contentType="bulletin"
+              contentId={bulletin.id}
+              initialCount={bulletin.comments}
             />
           </div>
         )}
       </div>
 
-      {images.length > 0 && (
+      {bulletin.imageUrls.length > 0 && (
         <ImagePreviewModal
-          images={images}
-          initialIndex={0}
+          images={bulletin.imageUrls}
+          initialIndex={previewIndex}
           isOpen={previewOpen}
           onClose={() => setPreviewOpen(false)}
         />

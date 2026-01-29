@@ -1,93 +1,35 @@
-// components/feed/EventCard.tsx
+// components/feed/EventCard.tsx - OPTIMIZED with pre-fetched data
 "use client"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Calendar, Users, MessageCircle, Pin, ArrowRight, MoreVertical, Eye, EyeOff, Plus, Shield } from "lucide-react"
+import { Calendar, Users, MessageCircle, Pin, ArrowRight, Eye, EyeOff, Plus, Shield, Lock } from "lucide-react"
 import { EventItem } from "@/app/(site)/home/types"
 import { PostCard } from "./PostCard"
 import { CreatePostDialog } from "@/components/posts/CreatePostDialog"
-import { createBrowserClient } from "@supabase/ssr"
+import { EventOptionsMenu } from "@/components/menus/EventOptionsMenu"
 
 interface EventCardProps {
   event: EventItem
   isPostsHidden: boolean
   onToggleHide: (e: React.MouseEvent) => void
   onPostCreated?: () => void
+  onEventDeleted?: () => void
 }
 
-export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }: EventCardProps) {
+export function EventCard({ 
+  event, 
+  isPostsHidden, 
+  onToggleHide, 
+  onPostCreated,
+  onEventDeleted
+}: EventCardProps) {
   const router = useRouter()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
-  const [eventOfText, setEventOfText] = useState("Loading...")
+  
+  // OPTIMIZED: Use pre-fetched data from props
+  const isPostingExpired = event.isPostingExpired ?? false
+  const eventOfText = event.eventOfText ?? "Custom Group"
   const visiblePosts = isPostsHidden ? [] : event.posts.slice(0, 3)
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
-
-  // Fetch and format "Event of" text
-  useEffect(() => {
-    async function fetchEventOfText() {
-      try {
-        const { data: eventData, error } = await supabase
-          .from('events')
-          .select('participant_type, participant_orgs, participant_depts, participant_courses')
-          .eq('id', event.id)
-          .single()
-
-        if (error) throw error
-
-        if (eventData.participant_type === 'public') {
-          setEventOfText("FAITH")
-          return
-        }
-
-        const names: string[] = []
-
-        if (eventData.participant_orgs && eventData.participant_orgs.length > 0) {
-          const { data: orgs } = await supabase
-            .from('organizations')
-            .select('name')
-            .in('id', eventData.participant_orgs)
-          
-          if (orgs) names.push(...orgs.map(o => o.name))
-        }
-
-        if (eventData.participant_depts && eventData.participant_depts.length > 0) {
-          const { data: depts } = await supabase
-            .from('departments')
-            .select('name')
-            .in('code', eventData.participant_depts)
-          
-          if (depts) names.push(...depts.map(d => d.name))
-        }
-
-        if (eventData.participant_courses && eventData.participant_courses.length > 0) {
-          const { data: courses } = await supabase
-            .from('courses')
-            .select('name')
-            .in('code', eventData.participant_courses)
-          
-          if (courses) names.push(...courses.map(c => c.name))
-        }
-
-        if (names.length === 0) {
-          setEventOfText("Custom Group")
-        } else if (names.length <= 3) {
-          setEventOfText(names.join(", "))
-        } else {
-          setEventOfText(`${names.slice(0, 3).join(", ")} +${names.length - 3} more`)
-        }
-
-      } catch (error) {
-        console.error("Error fetching event participants:", error)
-        setEventOfText("Custom Group")
-      }
-    }
-
-    fetchEventOfText()
-  }, [event.id, supabase])
 
   const handleCardClick = () => {
     router.push(`/event/${event.id}`)
@@ -95,13 +37,13 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
 
   const handleCreatePostClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (isPostingExpired) return
     setIsCreatePostOpen(true)
   }
 
   return (
     <>
-      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
-        {/* Card Header - Professional unified design */}
+      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200">
         <div 
           className="relative bg-gradient-to-br from-gray-50 to-white cursor-pointer group"
           onClick={handleCardClick}
@@ -115,7 +57,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
           <div className="p-6">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div className="flex-1 min-w-0">
-                {/* Event Title */}
                 <div className="flex items-start gap-2 mb-3">
                   <h4 className="text-2xl font-black text-gray-900 leading-tight flex-1">
                     {event.title}
@@ -123,7 +64,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
                   <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all flex-shrink-0 mt-1" />
                 </div>
                 
-                {/* Organizer Badge */}
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${
                     event.organizer.type === 'faith' 
@@ -133,15 +73,22 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
                     {event.organizer.type === 'faith' && <Shield className="h-3 w-3" />}
                     {event.organizer.name}
                   </span>
+
+                  {/* OPTIMIZED: Instantly show status without loading */}
+                  {isPostingExpired && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-100">
+                      Ended
+                    </span>
+                  )}
                 </div>
 
-                {/* Event Meta Information */}
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
                   <span className="flex items-center gap-2 font-medium">
                     <Calendar className="h-4 w-4 text-gray-400" />
                     {event.date}
                   </span>
                   <span className="text-gray-300">•</span>
+                  {/* OPTIMIZED: Instantly show participant text without loading */}
                   <span className="flex items-center gap-2 font-medium">
                     <Users className="h-4 w-4 text-gray-400" />
                     Event for: {eventOfText}
@@ -149,19 +96,16 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
                 </div>
               </div>
 
-              <button 
-                onClick={(e) => e.stopPropagation()}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <MoreVertical className="h-5 w-5" />
-              </button>
+              <EventOptionsMenu 
+                eventId={event.id} 
+                onUpdate={onPostCreated}
+                onDelete={onEventDeleted}
+              />
             </div>
-
-            {/* Footer Controls */}
+            
+            {/* View Full Event + Hide/Show Posts buttons */}
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-              <button 
-                className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 group/btn"
-              >
+              <button className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 group/btn">
                 View Full Event
                 <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
               </button>
@@ -185,7 +129,6 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
           </div>
         </div>
 
-        {/* Posts Section */}
         {!isPostsHidden && (
           <div className="bg-gray-50 border-t-2 border-gray-200">
             <div className="p-6 space-y-4">
@@ -199,28 +142,46 @@ export function EventCard({ event, isPostsHidden, onToggleHide, onPostCreated }:
               {visiblePosts.length > 0 ? (
                 <div className="space-y-3">
                   {visiblePosts.map((post) => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCard 
+                      key={post.id} 
+                      post={post} 
+                      eventId={event.id}
+                      onPostDeleted={onPostCreated}
+                      onPostUpdated={onPostCreated}
+                    />
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500 text-sm bg-white rounded-xl border-2 border-dashed border-gray-200">
-                  No posts yet. Be the first to share!
+                  {isPostingExpired 
+                    ? "Event has ended. Posting is closed." 
+                    : "No posts yet. Be the first to share!"}
                 </div>
               )}
 
-              <button 
-                onClick={handleCreatePostClick}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                Add Your Post
-              </button>
+              {/* OPTIMIZED: Instant button state without loading */}
+              {isPostingExpired ? (
+                <button 
+                  disabled 
+                  className="w-full py-3 bg-gray-200 text-gray-500 rounded-xl text-sm font-bold flex items-center justify-center gap-2 cursor-not-allowed border-2 border-gray-300"
+                >
+                  <Lock className="h-4 w-4" />
+                  Posting Closed (Event Ended)
+                </button>
+              ) : (
+                <button 
+                  onClick={handleCreatePostClick}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Your Post
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Create Post Dialog */}
       <CreatePostDialog
         isOpen={isCreatePostOpen}
         onClose={() => setIsCreatePostOpen(false)}

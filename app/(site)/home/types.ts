@@ -23,13 +23,20 @@ export type Post = {
   likes: number
   comments: number
   imageUrls: string[]
+  postedAsType?: string
+  postedAsOrgId?: string | null
+  reactionCount?: number
+  repostCount?: number
+  editedAt?: string | null
+  pinOrder?: number | null
+  taggedUsersCount?: number 
 }
 
 export type EventItem = {
   id: string
   title: string
-  organizer: Organizer
-  description?: string
+  description: string
+  organizer: { type: string; name: string }
   date: string
   tags: string[]
   visibility: string
@@ -39,4 +46,6 @@ export type EventItem = {
   participants: number
   totalPosts: number
   posts: Post[]
+  isPostingExpired?: boolean
+  eventOfText?: string
 }
