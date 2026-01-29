@@ -1,4 +1,4 @@
-// components/feed/BulletinCard.tsx - OPTIMIZED to use pre-fetched data
+// components/feed/BulletinCard.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -129,13 +129,13 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
       <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
         <div className="p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)} flex items-center justify-center flex-shrink-0 shadow-md`}>
+            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
               {getOrganizerIcon(bulletin.organizerType)}
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h5 className="font-bold text-gray-900">{bulletin.organizerName}</h5>
                     {bulletin.isPinned && (
@@ -158,6 +158,15 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
                         </span>
                       </>
                     )}
+                    {/* Tagged Users */}
+                    <span>•</span>
+                    <TaggedUsersDisplay
+                      contentType="bulletin"
+                      contentId={bulletin.id}
+                      canEdit={canEditTags}
+                      onTagsUpdated={loadData}
+                      initialCount={bulletin.taggedUsersCount || 0}
+                    />
                   </div>
                 </div>
 
@@ -171,101 +180,92 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
             </div>
           </div>
 
-          <div className="ml-[60px]">
-            <div className="mb-3">
-              <TaggedUsersDisplay
+          {/* Header/Subject Line */}
+          <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
+            {bulletin.header}
+          </h3>
+          
+          {/* Content Body */}
+          <p className="text-gray-800 leading-relaxed whitespace-pre-wrap mb-4">
+            {bulletin.body}
+          </p>
+
+          {/* Images */}
+          {bulletin.imageUrls.length > 0 && (
+            <div className={`mb-4 ${
+              bulletin.imageUrls.length === 1 ? 'grid grid-cols-1' :
+              bulletin.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
+              'grid grid-cols-2 gap-2'
+            }`}>
+              {bulletin.imageUrls.slice(0, 4).map((url, idx) => (
+                <div 
+                  key={idx} 
+                  className={`relative overflow-hidden rounded-xl bg-gray-100 cursor-pointer group ${
+                    bulletin.imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
+                  }`}
+                  onClick={() => handleImageClick(idx)}
+                >
+                  <img 
+                    src={url} 
+                    alt={`${bulletin.header} - Image ${idx + 1}`}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                  {idx === 3 && bulletin.imageUrls.length > 4 && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <span className="text-white text-2xl font-bold">+{bulletin.imageUrls.length - 4}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-1">
+              <ReactionButton 
                 contentType="bulletin"
                 contentId={bulletin.id}
-                canEdit={canEditTags}
-                onTagsUpdated={loadData}
-                initialCount={bulletin.taggedUsersCount || 0}
+                onReactionChange={handleReactionChange}
+              />
+              
+              {bulletin.allowComments && (
+                <button 
+                  onClick={() => setShowComments(!showComments)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
+                    showComments 
+                      ? 'bg-blue-100 text-blue-700' 
+                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
+                  }`}
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  <span className="text-xs font-bold">{bulletin.comments}</span>
+                  {showComments ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+              )}
+
+              <RepostButton
+                contentType="bulletin"
+                contentId={bulletin.id}
+                onRepostChange={handleReactionChange}
+                onRepostCreated={onRepostCreated}
               />
             </div>
 
-            <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
-              {bulletin.header}
-            </h3>
-            
-            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap mb-4">
-              {bulletin.body}
-            </p>
-
-            {bulletin.imageUrls.length > 0 && (
-              <div className={`mb-4 ${
-                bulletin.imageUrls.length === 1 ? 'grid grid-cols-1' :
-                bulletin.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
-                'grid grid-cols-2 gap-2'
-              }`}>
-                {bulletin.imageUrls.slice(0, 4).map((url, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`relative overflow-hidden rounded-lg bg-gray-100 cursor-pointer group ${
-                      bulletin.imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
-                    }`}
-                    onClick={() => handleImageClick(idx)}
-                  >
-                    <img 
-                      src={url} 
-                      alt={`${bulletin.header} - Image ${idx + 1}`}
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                    {idx === 3 && bulletin.imageUrls.length > 4 && (
-                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                        <span className="text-white text-2xl font-bold">+{bulletin.imageUrls.length - 4}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <div className="flex items-center gap-1">
-                <ReactionButton 
-                  contentType="bulletin"
-                  contentId={bulletin.id}
-                  onReactionChange={handleReactionChange}
-                />
-                
-                {bulletin.allowComments && (
-                  <button 
-                    onClick={() => setShowComments(!showComments)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
-                      showComments 
-                        ? 'bg-blue-100 text-blue-700' 
-                        : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
-                    }`}
-                  >
-                    <MessageCircle className="h-3.5 w-3.5" />
-                    <span className="text-xs font-bold">{bulletin.comments}</span>
-                    {showComments ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </button>
-                )}
-
-                <RepostButton
-                  contentType="bulletin"
-                  contentId={bulletin.id}
-                  onRepostChange={handleReactionChange}
-                  onRepostCreated={onRepostCreated}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                {repostCount > 0 && (
-                  <span className="text-xs text-gray-500">{repostCount} reposts</span>
-                )}
-                <ReactionSummary 
-                  contentType="bulletin"
-                  contentId={bulletin.id}
-                  totalCount={reactionCount}
-                  refreshTrigger={refreshTrigger}
-                />
-              </div>
+            <div className="flex items-center gap-2">
+              {repostCount > 0 && (
+                <span className="text-xs text-gray-500">{repostCount} reposts</span>
+              )}
+              <ReactionSummary 
+                contentType="bulletin"
+                contentId={bulletin.id}
+                totalCount={reactionCount}
+                refreshTrigger={refreshTrigger}
+              />
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - with repost navigation
+// components/feed/PostCard.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -179,8 +179,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
 
   const getIdentityIcon = (type: string) => {
     switch(type) {
-      case "faith_admin": return <Shield className="h-4 w-4 text-white" />
-      case "organization": return <Users className="h-4 w-4 text-white" />
+      case "faith_admin": return <Shield className="h-5 w-5 text-white" />
+      case "organization": return <Users className="h-5 w-5 text-white" />
       default: return null
     }
   }
@@ -200,25 +200,25 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
 
   if (loading && !post.postedAsType) {
     return (
-      <div className="bg-white rounded-xl border border-gray-300 p-4 animate-pulse">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="h-10 w-10 rounded-lg bg-gray-200"></div>
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 animate-pulse">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="h-12 w-12 rounded-xl bg-gray-200"></div>
           <div className="flex-1">
             <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
             <div className="h-3 bg-gray-200 rounded w-24"></div>
           </div>
         </div>
-        <div className="h-20 bg-gray-200 rounded"></div>
+        <div className="h-24 bg-gray-200 rounded-xl"></div>
       </div>
     )
   }
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-300 overflow-hidden hover:border-gray-400 transition-all duration-200">
-        <div className="p-4">
+      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
+        <div className="p-6">
           {/* Header */}
-          <div className="flex items-start gap-3 mb-3">
+          <div className="flex items-start gap-3 mb-4">
             <button
               onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
               disabled={displayIdentity.type !== 'user'}
@@ -228,14 +228,14 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
                 <img 
                   src={displayIdentity.avatarUrl} 
                   alt={displayIdentity.name}
-                  className="h-10 w-10 rounded-lg object-cover flex-shrink-0 shadow-sm hover:opacity-80 transition-opacity"
+                  className="h-12 w-12 rounded-xl object-cover flex-shrink-0 shadow-sm hover:opacity-80 transition-opacity"
                 />
               ) : (
-                <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center text-lg flex-shrink-0 shadow-sm`}>
+                <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
                   {displayIdentity.type !== 'user' ? (
                     getIdentityIcon(displayIdentity.type)
                   ) : (
-                    <span className="text-white font-bold text-xs">{getInitials(displayIdentity.name)}</span>
+                    <span className="text-white font-bold text-lg">{getInitials(displayIdentity.name)}</span>
                   )}
                 </div>
               )}
@@ -270,16 +270,14 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{post.time}</span>
                     {editedAt && (
                       <>
                         <span>•</span>
-                        <span className="text-gray-400 italic">
-                          Edited {new Date(editedAt).toLocaleString('en-US', { 
-                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-                          })}
+                        <span className="italic">
+                          Edited
                         </span>
                       </>
                     )}
@@ -292,6 +290,15 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
                         </span>
                       </>
                     )}
+                    {/* Tagged Users */}
+                    <span>•</span>
+                    <TaggedUsersDisplay
+                      contentType="post"
+                      contentId={post.id}
+                      canEdit={canEditTags}
+                      onTagsUpdated={handlePostUpdate}
+                      initialCount={post.taggedUsersCount || 0}
+                    />
                   </div>
                 </div>
                 {postEventId && (
@@ -309,22 +316,12 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
             </div>
           </div>
 
-          <div className="mb-3">
-            <TaggedUsersDisplay
-              contentType="post"
-              contentId={post.id}
-              canEdit={canEditTags}
-              onTagsUpdated={handlePostUpdate}
-              initialCount={post.taggedUsersCount || 0}
-            />
-          </div>
-
           {/* Content */}
-          <p className="text-gray-800 text-sm leading-relaxed mb-3">{post.content}</p>
+          <p className="text-gray-800 leading-relaxed whitespace-pre-wrap mb-4">{post.content}</p>
 
           {/* Images Grid */}
           {post.imageUrls.length > 0 && (
-            <div className={`mb-3 ${
+            <div className={`mb-4 ${
               post.imageUrls.length === 1 ? 'grid grid-cols-1' :
               post.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
               'grid grid-cols-2 gap-2'
@@ -332,7 +329,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
               {post.imageUrls.slice(0, 4).map((url, idx) => (
                 <div 
                   key={idx} 
-                  className={`relative overflow-hidden rounded-lg bg-gray-100 cursor-pointer group ${
+                  className={`relative overflow-hidden rounded-xl bg-gray-100 cursor-pointer group ${
                     post.imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
                   }`}
                   onClick={() => handleImageClick(idx)}
@@ -354,7 +351,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
           )}
 
           {/* Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="flex items-center gap-1">
               <ReactionButton 
                 contentType="post"
@@ -405,7 +402,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
 
         {/* Comment Section */}
         {showComments && postEventId && (
-          <div className="border-t border-gray-200 p-4 bg-gray-50 animate-in slide-in-from-top-2 duration-200">
+          <div className="border-t border-gray-200 p-4 bg-gray-50">
             <CommentSection 
               contentType="post"
               contentId={post.id} 

@@ -1,9 +1,9 @@
-// components/feed/AnnouncementCard.tsx - OPTIMIZED to use pre-fetched data
+// components/feed/AnnouncementCard.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users } from "lucide-react"
+import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users, Image } from "lucide-react"
 import { AnnouncementOptionsMenu } from "@/components/menus/AnnouncementOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
@@ -13,13 +13,15 @@ import { RepostButton } from "@/components/reposts/RepostButton"
 import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
 import { createBrowserClient } from "@supabase/ssr"
 
+// 1. Define the type to match your data structure
 type Announcement = {
   id: string
   header: string
   body: string
   organizerType: string
   organizerName: string
-  imageUrl: string | null
+  // This expects the parent component to pass the array from DB "image_urls" to this prop
+  imageUrls: string[] | null 
   isPinned: boolean
   likes: number
   comments: number
@@ -40,6 +42,7 @@ interface AnnouncementCardProps {
 export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: AnnouncementCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
   
   const [reactionCount, setReactionCount] = useState(announcement.reactionCount || 0)
@@ -52,6 +55,14 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
+
+  // 2. Logic to safely get the array of images
+  const displayImages = useMemo(() => {
+    if (Array.isArray(announcement.imageUrls) && announcement.imageUrls.length > 0) {
+      return announcement.imageUrls
+    }
+    return []
+  }, [announcement.imageUrls])
 
   useEffect(() => {
     loadUserData()
@@ -102,6 +113,11 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
     setRefreshTrigger(prev => prev + 1)
   }
 
+  const handleImageClick = (index: number) => {
+    setPreviewIndex(index)
+    setPreviewOpen(true)
+  }
+
   const getOrganizerColor = (type: string) => {
     switch(type) {
       case "faith": return "from-purple-500 to-indigo-600"
@@ -118,20 +134,18 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
     }
   }
 
-  const images = announcement.imageUrl ? [announcement.imageUrl] : []
-
   return (
     <>
       <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
         <div className="p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)} flex items-center justify-center flex-shrink-0 shadow-md`}>
+            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
               {getOrganizerIcon(announcement.organizerType)}
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h5 className="font-bold text-gray-900">{announcement.organizerName}</h5>
                     {announcement.isPinned && (
@@ -145,6 +159,25 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{announcement.createdAt}</span>
+                    {/* 3. Show Image count in metadata */}
+                    {displayImages.length > 0 && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Image className="h-3 w-3" />
+                          {displayImages.length}
+                        </span>
+                      </>
+                    )}
+                    {/* Tagged Users */}
+                    <span>•</span>
+                    <TaggedUsersDisplay
+                      contentType="announcement"
+                      contentId={announcement.id}
+                      canEdit={canEditTags}
+                      onTagsUpdated={loadData}
+                      initialCount={announcement.taggedUsersCount || 0}
+                    />
                   </div>
                 </div>
 
@@ -158,85 +191,90 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
             </div>
           </div>
 
-          <div className="ml-[60px]">
-            <div className="mb-3">
-              <TaggedUsersDisplay
+          <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
+            {announcement.header}
+          </h3>
+          
+          <p className="text-gray-800 leading-relaxed whitespace-pre-wrap mb-4">
+            {announcement.body}
+          </p>
+
+          {/* 4. Display Images Grid */}
+          {displayImages.length > 0 && (
+            <div className={`mb-4 ${
+              displayImages.length === 1 ? 'grid grid-cols-1' :
+              displayImages.length === 2 ? 'grid grid-cols-2 gap-2' :
+              'grid grid-cols-2 gap-2'
+            }`}>
+              {displayImages.slice(0, 4).map((url, idx) => (
+                <div 
+                  key={idx} 
+                  className={`relative overflow-hidden rounded-xl bg-gray-100 cursor-pointer group ${
+                    displayImages.length === 1 ? 'aspect-video' : 'aspect-square'
+                  }`}
+                  onClick={() => handleImageClick(idx)}
+                >
+                  <img 
+                    src={url} 
+                    alt={`${announcement.header} - Image ${idx + 1}`}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                  {idx === 3 && displayImages.length > 4 && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <span className="text-white text-2xl font-bold">+{displayImages.length - 4}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-1">
+              <ReactionButton 
                 contentType="announcement"
                 contentId={announcement.id}
-                canEdit={canEditTags}
-                onTagsUpdated={loadData}
-                initialCount={announcement.taggedUsersCount || 0}
+                onReactionChange={handleReactionChange}
+              />
+              
+              {announcement.allowComments && (
+                <button 
+                  onClick={() => setShowComments(!showComments)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
+                    showComments 
+                      ? 'bg-blue-100 text-blue-700' 
+                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
+                  }`}
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  <span className="text-xs font-bold">{announcement.comments}</span>
+                  {showComments ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </button>
+              )}
+
+              <RepostButton
+                contentType="announcement"
+                contentId={announcement.id}
+                onRepostChange={handleReactionChange}
+                onRepostCreated={onRepostCreated}
               />
             </div>
 
-            <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
-              {announcement.header}
-            </h3>
-            
-            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap mb-4">
-              {announcement.body}
-            </p>
-
-            {announcement.imageUrl && (
-              <div 
-                className="relative rounded-xl overflow-hidden bg-gray-100 mb-4 cursor-pointer group"
-                onClick={() => setPreviewOpen(true)}
-              >
-                <img 
-                  src={announcement.imageUrl} 
-                  alt={announcement.header}
-                  className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-              <div className="flex items-center gap-1">
-                <ReactionButton 
-                  contentType="announcement"
-                  contentId={announcement.id}
-                  onReactionChange={handleReactionChange}
-                />
-                
-                {announcement.allowComments && (
-                  <button 
-                    onClick={() => setShowComments(!showComments)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
-                      showComments 
-                        ? 'bg-blue-100 text-blue-700' 
-                        : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
-                    }`}
-                  >
-                    <MessageCircle className="h-3.5 w-3.5" />
-                    <span className="text-xs font-bold">{announcement.comments}</span>
-                    {showComments ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </button>
-                )}
-
-                <RepostButton
-                  contentType="announcement"
-                  contentId={announcement.id}
-                  onRepostChange={handleReactionChange}
-                  onRepostCreated={onRepostCreated}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                {repostCount > 0 && (
-                  <span className="text-xs text-gray-500">{repostCount} reposts</span>
-                )}
-                <ReactionSummary 
-                  contentType="announcement"
-                  contentId={announcement.id}
-                  totalCount={reactionCount}
-                  refreshTrigger={refreshTrigger}
-                />
-              </div>
+            <div className="flex items-center gap-2">
+              {repostCount > 0 && (
+                <span className="text-xs text-gray-500">{repostCount} reposts</span>
+              )}
+              <ReactionSummary 
+                contentType="announcement"
+                contentId={announcement.id}
+                totalCount={reactionCount}
+                refreshTrigger={refreshTrigger}
+              />
             </div>
           </div>
         </div>
@@ -252,10 +290,10 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
         )}
       </div>
 
-      {images.length > 0 && (
+      {displayImages.length > 0 && (
         <ImagePreviewModal
-          images={images}
-          initialIndex={0}
+          images={displayImages}
+          initialIndex={previewIndex}
           isOpen={previewOpen}
           onClose={() => setPreviewOpen(false)}
         />

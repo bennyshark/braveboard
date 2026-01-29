@@ -15,13 +15,14 @@ import { RepostCard } from "@/components/feed/RepostCard"
 import { CreateFreeWallPostDialog } from "@/components/posts/CreateFreeWallPostDialog"
 import { useSearchParams } from "next/navigation"
 
+// CHANGED: Updated to match Bulletin (imageUrls array)
 type Announcement = {
   id: string
   header: string
   body: string
   organizerType: string
   organizerName: string
-  imageUrl: string | null
+  imageUrls: string[] // <--- CHANGED from imageUrl: string | null
   isPinned: boolean
   likes: number
   comments: number
@@ -419,7 +420,8 @@ function HomeContent() {
           creatorName,
           creatorAvatar,
           creatorType,
-          imageUrl: data.image_url,
+          // CHANGED: Map to imageUrls array, matching bulletin logic
+          imageUrls: data.image_urls || [], 
           createdAt: new Date(data.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           })
@@ -918,7 +920,8 @@ function HomeContent() {
           body: row.body,
           organizerType,
           organizerName,
-          imageUrl: row.image_url,
+          // CHANGED: Use image_urls array directly, just like bulletin
+          imageUrls: row.image_urls || [], 
           isPinned: row.is_pinned,
           likes: row.likes || 0,
           comments: row.comments || 0,

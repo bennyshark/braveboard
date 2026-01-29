@@ -37,6 +37,8 @@ type Course = {
   name: string
 }
 
+const MAX_IMAGES = 150
+
 // --- MAIN FORM COMPONENT ---
 function CreateAnnouncementForm() {
   const router = useRouter()
@@ -47,8 +49,9 @@ function CreateAnnouncementForm() {
   const [dataLoaded, setDataLoaded] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string>("")
+  // Changed from single file to arrays
+  const [images, setImages] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
   
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -208,24 +211,29 @@ function CreateAnnouncementForm() {
     }
   }
 
+  // UPDATED: Handle multiple images
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setImageFile(file)
+    const files = Array.from(e.target.files || [])
+    if (files.length + images.length > MAX_IMAGES) {
+      alert(`You can only upload up to ${MAX_IMAGES} images`)
+      return
+    }
+
+    setImages([...images, ...files])
+    
+    files.forEach(file => {
       const reader = new FileReader()
       reader.onloadend = () => {
-        setImagePreview(reader.result as string)
+        setImagePreviews(prev => [...prev, reader.result as string])
       }
       reader.readAsDataURL(file)
-    }
+    })
   }
 
-  const removeImage = () => {
-    setImageFile(null)
-    setImagePreview("")
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+  // UPDATED: Remove specific image
+  const removeImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index))
+    setImagePreviews(imagePreviews.filter((_, i) => i !== index))
   }
 
   const handleSubmit = async () => {
@@ -244,17 +252,18 @@ function CreateAnnouncementForm() {
 
     setIsSubmitting(true)
     try {
-      let imageUrl = null
+      // UPDATED: Upload Loop for multiple images
+      const imageUrls: string[] = []
 
-      // Upload image if exists
-      if (imageFile) {
-        const fileExt = imageFile.name.split('.').pop()
-        const fileName = `${userId}-${Date.now()}.${fileExt}`
+      for (const image of images) {
+        const fileExt = image.name.split('.').pop()
+        // Added random string to prevent filename collision in loop
+        const fileName = `${userId}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
         const filePath = `${fileName}`
 
         const { error: uploadError } = await supabase.storage
           .from('announcements')
-          .upload(filePath, imageFile)
+          .upload(filePath, image)
 
         if (uploadError) throw uploadError
 
@@ -262,7 +271,7 @@ function CreateAnnouncementForm() {
           .from('announcements')
           .getPublicUrl(filePath)
 
-        imageUrl = publicUrl
+        imageUrls.push(publicUrl)
       }
 
       const announcementData = {
@@ -271,7 +280,8 @@ function CreateAnnouncementForm() {
         created_by: userId,
         creator_type: creatorType,
         creator_org_id: creatorType === 'organization' ? selectedCreatorOrg : null,
-        image_url: imageUrl,
+        // UPDATED: Sending array of URLs
+        image_urls: imageUrls, 
         audience_type: audienceType,
         audience_orgs: audOrgs,
         audience_depts: audDepts,
@@ -429,41 +439,60 @@ function CreateAnnouncementForm() {
             onUsersChange={setTaggedUsers}
           />
 
-          {/* Image Upload */}
-          <div>
-            <label className="block text-sm font-bold mb-2">Image (Optional)</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-            
-            {!imagePreview ? (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                type="button"
-                className="flex items-center justify-center gap-3 w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-blue-50 hover:to-purple-50 border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-2xl text-gray-700 hover:text-blue-700 font-bold transition-all group"
-              >
-                <div className="p-2 bg-white rounded-lg shadow-sm group-hover:shadow-md transition-all">
-                  <ImageIcon className="h-5 w-5" />
-                </div>
-                <span>Upload Image</span>
-              </button>
-            ) : (
-              <div className="relative rounded-2xl overflow-hidden border-2 border-gray-200">
-                <img src={imagePreview} alt="Preview" className="w-full h-64 object-cover" />
-                <button
-                  onClick={removeImage}
-                  type="button"
-                  className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+          {/* Image Previews */}
+          {imagePreviews.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                <ImageIcon className="h-4 w-4" />
+                Attached Images ({imagePreviews.length}/{MAX_IMAGES})
               </div>
-            )}
-          </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-96 overflow-y-auto">
+                {imagePreviews.map((preview, idx) => (
+                  <div 
+                    key={idx} 
+                    className="relative group aspect-square rounded-2xl overflow-hidden bg-gray-100 shadow-md hover:shadow-xl transition-all"
+                  >
+                    <img 
+                      src={preview} 
+                      alt={`Preview ${idx + 1}`} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300"></div>
+                    <button
+                      onClick={() => removeImage(idx)}
+                      type="button"
+                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-110"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* UPDATED: Multiple Image Upload Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple // Enabled multiple selection
+            onChange={handleImageSelect}
+            className="hidden"
+          />
+          
+          {images.length < MAX_IMAGES && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              type="button"
+              className="flex items-center justify-center gap-3 w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-blue-50 hover:to-purple-50 border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-2xl text-gray-700 hover:text-blue-700 font-bold transition-all group"
+            >
+              <div className="p-2 bg-white rounded-lg shadow-sm group-hover:shadow-md transition-all">
+                <ImageIcon className="h-5 w-5" />
+              </div>
+              <span>Add Images ({images.length}/{MAX_IMAGES})</span>
+            </button>
+          )}
         </div>
 
         {/* 3. AUDIENCE */}
