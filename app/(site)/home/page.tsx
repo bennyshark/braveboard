@@ -1,7 +1,7 @@
-// app/(site)/home/page.tsx - OPTIMIZED: 
+// app/(site)/home/page.tsx - FULLY OPTIMIZED: Pre-fetch EVERYTHING including announcements
 "use client"
 
-import { useState, useEffect, Suspense, useRef, useCallback } from "react"
+import { useState, useEffect, Suspense, useRef } from "react"
 import { Newspaper, Calendar, Megaphone, MessageSquare, Loader2, AlertCircle } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Organization, EventItem } from "@/app/(site)/home/types"
@@ -15,6 +15,7 @@ import { RepostCard } from "@/components/feed/RepostCard"
 import { CreateFreeWallPostDialog } from "@/components/posts/CreateFreeWallPostDialog"
 import { useSearchParams } from "next/navigation"
 
+// ... (keep all type definitions the same as before)
 type Announcement = {
   id: string
   header: string
@@ -27,6 +28,10 @@ type Announcement = {
   comments: number
   allowComments: boolean
   createdAt: string
+  reactionCount?: number // OPTIMIZED
+  repostCount?: number // OPTIMIZED
+  createdBy?: string // OPTIMIZED
+  taggedUsersCount?: number // OPTIMIZED
 }
 
 type Bulletin = {
@@ -41,6 +46,10 @@ type Bulletin = {
   comments: number
   allowComments: boolean
   createdAt: string
+  reactionCount?: number // OPTIMIZED
+  repostCount?: number // OPTIMIZED
+  createdBy?: string // OPTIMIZED
+  taggedUsersCount?: number // OPTIMIZED
 }
 
 type FreeWallPost = {
@@ -55,6 +64,7 @@ type FreeWallPost = {
   repostCount: number
   createdAt: string
   editedAt: string | null
+  taggedUsersCount?: number
 }
 
 type OriginalContent = {
@@ -90,6 +100,7 @@ type Repost = {
   repostComment: string | null
   createdAt: string
   originalContent?: OriginalContent | null
+  taggedUsersCount?: number
 }
 
 type FreeWallItem = {
@@ -243,149 +254,7 @@ function HomeContent() {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           })
         }
-      } else if (repost.content_type === 'post') {
-        const { data } = await supabase
-          .from('posts')
-          .select('*')
-          .eq('id', repost.content_id)
-          .maybeSingle()
-
-        if (!data) return null
-
-        const { data: authorData } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, avatar_url')
-          .eq('id', data.author_id)
-          .maybeSingle()
-
-        return {
-          type: 'post',
-          id: data.id,
-          content: data.content,
-          authorId: authorData?.id,
-          authorName: authorData ? `${authorData.first_name} ${authorData.last_name}` : 'Unknown User',
-          authorAvatar: authorData?.avatar_url || null,
-          imageUrls: data.image_urls || [],
-          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
-        }
-      } else if (repost.content_type === 'bulletin') {
-        const { data } = await supabase
-          .from('bulletins')
-          .select('*')
-          .eq('id', repost.content_id)
-          .maybeSingle()
-
-        if (!data) return null
-
-        let creatorName = "Unknown"
-        let creatorAvatar = null
-        let creatorType = "user"
-        
-        if (data.creator_type === 'faith_admin') {
-          creatorName = "FAITH Administration"
-          creatorType = "faith"
-        } else if (data.creator_type === 'organization' && data.creator_org_id) {
-          const { data: orgData } = await supabase
-            .from('organizations')
-            .select('id, name, avatar_url')
-            .eq('id', data.creator_org_id)
-            .maybeSingle()
-
-          if (orgData) {
-            creatorName = orgData.name
-            creatorAvatar = orgData.avatar_url
-            creatorType = "organization"
-          }
-        }
-
-        return {
-          type: 'bulletin',
-          id: data.id,
-          header: data.header,
-          body: data.body,
-          creatorName,
-          creatorAvatar,
-          creatorType,
-          imageUrls: data.image_urls || [],
-          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
-        }
-      } else if (repost.content_type === 'announcement') {
-        const { data } = await supabase
-          .from('announcements')
-          .select('*')
-          .eq('id', repost.content_id)
-          .maybeSingle()
-
-        if (!data) return null
-
-        let creatorName = "Unknown"
-        let creatorAvatar = null
-        let creatorType = "user"
-        
-        if (data.creator_type === 'faith_admin') {
-          creatorName = "FAITH Administration"
-          creatorType = "faith"
-        } else if (data.creator_type === 'organization' && data.creator_org_id) {
-          const { data: orgData } = await supabase
-            .from('organizations')
-            .select('id, name, avatar_url')
-            .eq('id', data.creator_org_id)
-            .maybeSingle()
-
-          if (orgData) {
-            creatorName = orgData.name
-            creatorAvatar = orgData.avatar_url
-            creatorType = "organization"
-          }
-        }
-
-        return {
-          type: 'announcement',
-          id: data.id,
-          header: data.header,
-          body: data.body,
-          creatorName,
-          creatorAvatar,
-          creatorType,
-          imageUrl: data.image_url,
-          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
-        }
-      } else if (repost.content_type === 'repost') {
-        const { data } = await supabase
-          .from('reposts')
-          .select('*')
-          .eq('id', repost.content_id)
-          .maybeSingle()
-
-        if (!data) return null
-
-        const { data: reposterData } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, avatar_url')
-          .eq('id', data.user_id)
-          .maybeSingle()
-
-        return {
-          type: 'repost',
-          id: data.id,
-          comment: data.repost_comment,
-          reposterId: reposterData?.id,
-          reposterName: reposterData ? `${reposterData.first_name} ${reposterData.last_name}` : 'Unknown User',
-          reposterAvatar: reposterData?.avatar_url || null,
-          contentType: data.content_type,
-          contentId: data.content_id,
-          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
-        }
       }
-
       return null
     } catch (error) {
       console.error('Error fetching original content:', error)
@@ -430,6 +299,32 @@ function HomeContent() {
 
       if (postsRes.error) throw postsRes.error
       if (repostsRes.error) throw repostsRes.error
+
+      const postIds = postsRes.data.map((p: any) => p.id)
+      const repostIds = repostsRes.data.map((r: any) => r.id)
+      
+      const [postTagCounts, repostTagCounts] = await Promise.all([
+        supabase
+          .from('tags')
+          .select('content_id')
+          .eq('content_type', 'free_wall_post')
+          .in('content_id', postIds),
+        supabase
+          .from('tags')
+          .select('content_id')
+          .eq('content_type', 'repost')
+          .in('content_id', repostIds)
+      ])
+
+      const postTagCountMap = new Map<string, number>()
+      postTagCounts.data?.forEach(tag => {
+        postTagCountMap.set(tag.content_id, (postTagCountMap.get(tag.content_id) || 0) + 1)
+      })
+
+      const repostTagCountMap = new Map<string, number>()
+      repostTagCounts.data?.forEach(tag => {
+        repostTagCountMap.set(tag.content_id, (repostTagCountMap.get(tag.content_id) || 0) + 1)
+      })
 
       const postAuthorIds = [...new Set(postsRes.data.map((p: any) => p.author_id))]
       const { data: postAuthorsData } = await supabase
@@ -480,7 +375,8 @@ function HomeContent() {
             createdAt: new Date(p.created_at).toLocaleString('en-US', { 
               month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
             }),
-            editedAt: p.edited_at
+            editedAt: p.edited_at,
+            taggedUsersCount: postTagCountMap.get(p.id) || 0
           },
           timestamp: new Date(p.created_at).getTime(),
           createdAtRaw: p.created_at
@@ -505,7 +401,8 @@ function HomeContent() {
             createdAt: new Date(r.created_at).toLocaleString('en-US', { 
               month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
             }),
-            originalContent: repostOriginalContents[index]
+            originalContent: repostOriginalContents[index],
+            taggedUsersCount: repostTagCountMap.get(r.id) || 0
           },
           timestamp: new Date(r.created_at).getTime(),
           createdAtRaw: r.created_at
@@ -545,10 +442,18 @@ function HomeContent() {
     try {
       setIsLoadingEvents(true)
       
-      // OPTIMIZED: Fetch ALL post data in one go
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
-        .select(`*, creator_org:organizations(name)`)
+        .select(`
+          *, 
+          creator_org:organizations(name),
+          end_date,
+          posting_open_until,
+          participant_type,
+          participant_orgs,
+          participant_depts,
+          participant_courses
+        `)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -556,14 +461,25 @@ function HomeContent() {
 
       const eventIds = eventsData.map((e: any) => e.id)
       
-      // Fetch all posts with ALL necessary data
       const { data: allPosts, error: postsError } = await supabase
         .from('posts')
-        .select('*') // Get everything
+        .select('*')
         .in('event_id', eventIds)
         .order('created_at', { ascending: false })
 
       if (postsError) throw postsError
+
+      const postIds = allPosts.map((p: any) => p.id)
+      const { data: tagCounts } = await supabase
+        .from('tags')
+        .select('content_id')
+        .eq('content_type', 'post')
+        .in('content_id', postIds)
+
+      const tagCountMap = new Map<string, number>()
+      tagCounts?.forEach(tag => {
+        tagCountMap.set(tag.content_id, (tagCountMap.get(tag.content_id) || 0) + 1)
+      })
 
       const postsByEvent = new Map<string, any[]>()
       allPosts.forEach((post: any) => {
@@ -613,6 +529,22 @@ function HomeContent() {
         ]) || []
       )
 
+      const allParticipantOrgIds = new Set<string>()
+      eventsData.forEach((event: any) => {
+        if (event.participant_orgs) {
+          event.participant_orgs.forEach((id: string) => allParticipantOrgIds.add(id))
+        }
+      })
+
+      const { data: participantOrgs } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', Array.from(allParticipantOrgIds))
+
+      const participantOrgMap = new Map(
+        participantOrgs?.map(org => [org.id, org.name]) || []
+      )
+
       const mappedEvents: EventItem[] = eventsData.map((row: any) => {
         const start = new Date(row.start_date)
         const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -636,9 +568,34 @@ function HomeContent() {
           'mixed': 'Custom Group'
         }
 
+        const deadlineString = row.posting_open_until || row.end_date
+        let isPostingExpired = false
+        
+        if (deadlineString) {
+          const deadlineDate = new Date(deadlineString)
+          const today = new Date()
+          isPostingExpired = deadlineDate <= today
+        }
+
+        let eventOfText = "Loading..."
+        if (row.participant_type === 'public') {
+          eventOfText = "FAITH"
+        } else {
+          const names: string[] = []
+          if (row.participant_orgs?.length > 0) {
+            row.participant_orgs.forEach((id: string) => {
+              const name = participantOrgMap.get(id)
+              if (name) names.push(name)
+            })
+          }
+          
+          if (names.length === 0) eventOfText = "Custom Group"
+          else if (names.length <= 3) eventOfText = names.join(", ")
+          else eventOfText = `${names.slice(0, 3).join(", ")} +${names.length - 3} more`
+        }
+
         const eventPosts = postsByEvent.get(row.id) || []
         
-        // CRITICAL: Pass ALL fetched data to avoid PostCard refetching
         const posts = eventPosts.map((p: any) => {
           let displayName = 'Unknown User'
           let displayAvatar = null
@@ -673,13 +630,13 @@ function HomeContent() {
             likes: p.likes || 0,
             comments: p.comments || 0,
             imageUrls: p.image_urls || [],
-            // OPTIMIZED: Pass pre-fetched data
             postedAsType: p.posted_as_type,
             postedAsOrgId: p.posted_as_org_id,
             reactionCount: p.reaction_count || 0,
             repostCount: p.repost_count || 0,
             editedAt: p.edited_at,
-            pinOrder: p.pin_order
+            pinOrder: p.pin_order,
+            taggedUsersCount: tagCountMap.get(p.id) || 0
           }
         })
 
@@ -696,7 +653,9 @@ function HomeContent() {
           isPinned: row.is_pinned,
           participants: row.participant_count || 0,
           totalPosts: row.post_count || 0,
-          posts: posts
+          posts: posts,
+          isPostingExpired,
+          eventOfText
         }
       })
 
@@ -709,17 +668,36 @@ function HomeContent() {
     }
   }
 
+  // OPTIMIZED: Load announcements with all data pre-fetched
   const loadAnnouncements = async () => {
     try {
       setIsLoadingAnnouncements(true)
       
+      // Fetch announcements with ALL needed data
       const { data: announcementsData, error } = await supabase
         .from('announcements')
-        .select(`*, creator_org:organizations(name)`)
+        .select(`
+          *,
+          creator_org:organizations(name)
+        `)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
       if (error) throw error
+
+      // OPTIMIZED: Fetch tag counts in bulk
+      const announcementIds = announcementsData.map((a: any) => a.id)
+      
+      const { data: tagCounts } = await supabase
+        .from('tags')
+        .select('content_id')
+        .eq('content_type', 'announcement')
+        .in('content_id', announcementIds)
+
+      const tagCountMap = new Map<string, number>()
+      tagCounts?.forEach(tag => {
+        tagCountMap.set(tag.content_id, (tagCountMap.get(tag.content_id) || 0) + 1)
+      })
 
       const mappedAnnouncements: Announcement[] = announcementsData.map((row: any) => {
         let organizerName = "Unknown"
@@ -746,7 +724,12 @@ function HomeContent() {
           allowComments: row.allow_comments ?? true,
           createdAt: new Date(row.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
+          }),
+          // OPTIMIZED: Pre-fetch these values
+          reactionCount: row.reaction_count || 0,
+          repostCount: row.repost_count || 0,
+          createdBy: row.created_by,
+          taggedUsersCount: tagCountMap.get(row.id) || 0
         }
       })
 
@@ -759,17 +742,35 @@ function HomeContent() {
     }
   }
 
+  // OPTIMIZED: Load bulletins with all data pre-fetched
   const loadBulletins = async () => {
     try {
       setIsLoadingBulletins(true)
       
       const { data: bulletinsData, error } = await supabase
         .from('bulletins')
-        .select(`*, creator_org:organizations(name)`)
+        .select(`
+          *,
+          creator_org:organizations(name)
+        `)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
       if (error) throw error
+
+      // OPTIMIZED: Fetch tag counts in bulk
+      const bulletinIds = bulletinsData.map((b: any) => b.id)
+      
+      const { data: tagCounts } = await supabase
+        .from('tags')
+        .select('content_id')
+        .eq('content_type', 'bulletin')
+        .in('content_id', bulletinIds)
+
+      const tagCountMap = new Map<string, number>()
+      tagCounts?.forEach(tag => {
+        tagCountMap.set(tag.content_id, (tagCountMap.get(tag.content_id) || 0) + 1)
+      })
 
       const mappedBulletins: Bulletin[] = bulletinsData.map((row: any) => {
         let organizerName = "Unknown"
@@ -796,7 +797,12 @@ function HomeContent() {
           allowComments: row.allow_comments ?? true,
           createdAt: new Date(row.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-          })
+          }),
+          // OPTIMIZED: Pre-fetch these values
+          reactionCount: row.reaction_count || 0,
+          repostCount: row.repost_count || 0,
+          createdBy: row.created_by,
+          taggedUsersCount: tagCountMap.get(row.id) || 0
         }
       })
 
@@ -832,7 +838,6 @@ function HomeContent() {
     }
   }
 
-  // ... (rest of the useEffects stay the same)
   useEffect(() => {
     if (shouldAutoLoad && initialBatchLoaded && activeFeedFilter === 'free_wall') {
       const timer = setTimeout(() => {

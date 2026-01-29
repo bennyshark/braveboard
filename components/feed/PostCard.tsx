@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - OPTIMIZED with pre-fetched data support
+// components/feed/PostCard.tsx - OPTIMIZED with tag count support
 "use client"
 
 import { useState, useEffect } from "react"
@@ -34,7 +34,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(false)
   
-  // OPTIMIZED: Use prop data if available, otherwise fetch
+  // OPTIMIZED: Use prop data if available
   const [commentCount, setCommentCount] = useState(post.comments)
   const [reactionCount, setReactionCount] = useState(post.reactionCount || 0)
   const [repostCount, setRepostCount] = useState(post.repostCount || 0)
@@ -46,7 +46,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   
   // OPTIMIZED: Initialize with prop data
   const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>(() => {
-    // If we have pre-fetched data, use it immediately
     if (post.postedAsType === 'faith_admin') {
       return {
         type: 'faith_admin',
@@ -56,7 +55,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     } else if (post.postedAsType === 'organization') {
       return {
         type: 'organization',
-        name: post.author, // Already resolved in parent
+        name: post.author,
         avatarUrl: post.avatarUrl
       }
     }
@@ -67,7 +66,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     }
   })
   
-  const [loading, setLoading] = useState(false) // Start as not loading since we have data
+  const [loading, setLoading] = useState(false)
   const [postEventId, setPostEventId] = useState<string | null>(eventId || null)
 
   const supabase = createBrowserClient(
@@ -77,7 +76,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
 
   const isOnEventPage = pathname?.startsWith('/event/')
 
-  // OPTIMIZED: Only fetch if we don't have pre-fetched data
   const loadPostData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -100,14 +98,12 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
         setPostEventId(postData.event_id)
       }
 
-      // Update counts
       setCommentCount(postData.comments || 0)
       setReactionCount(postData.reaction_count || 0)
       setRepostCount(postData.repost_count || 0)
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
-      // Only fetch identity if we don't already have it from props
       if (!post.postedAsType) {
         if (postData.posted_as_type === 'user') {
           setDisplayIdentity({
@@ -147,14 +143,12 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   }
 
   useEffect(() => {
-    // OPTIMIZED: Only fetch if we're missing critical data
     const needsFetch = !post.postedAsType || !eventId
     
     if (needsFetch) {
       setLoading(true)
       loadPostData()
     } else {
-      // We already have all the data, just get user ID
       supabase.auth.getUser().then(({ data: { user } }) => {
         setCurrentUserId(user?.id || null)
         setCanEditTags(user?.id === post.authorId)
@@ -205,7 +199,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     setPreviewOpen(true)
   }
 
-  // OPTIMIZED: Removed loading skeleton since we start with data
   if (loading && !post.postedAsType) {
     return (
       <div className="bg-white rounded-xl border border-gray-300 p-4 animate-pulse">
@@ -317,13 +310,14 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
             </div>
           </div>
 
-          {/* Tagged Users */}
+          {/* OPTIMIZED: Tagged Users with pre-fetched count */}
           <div className="mb-3">
             <TaggedUsersDisplay
               contentType="post"
               contentId={post.id}
               canEdit={canEditTags}
               onTagsUpdated={handlePostUpdate}
+              initialCount={post.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
             />
           </div>
 

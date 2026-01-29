@@ -1,4 +1,4 @@
-// components/tags/TaggedUsersDisplay.tsx
+// components/tags/TaggedUsersDisplay.tsx - OPTIMIZED with lazy loading
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -7,11 +7,11 @@ import { createBrowserClient } from "@supabase/ssr"
 import { TagUserSelector } from "./TagUserSelector"
 
 interface TaggedUsersDisplayProps {
-  // Added 'free_wall_post' to the allowed types
   contentType: 'post' | 'bulletin' | 'announcement' | 'repost' | 'free_wall_post'
   contentId: string
   canEdit: boolean 
   onTagsUpdated?: () => void
+  initialCount?: number // OPTIMIZED: Pre-fetched count from parent
 }
 
 type TaggedUser = {
@@ -24,10 +24,13 @@ export function TaggedUsersDisplay({
   contentType, 
   contentId, 
   canEdit,
-  onTagsUpdated 
+  onTagsUpdated,
+  initialCount = 0 // OPTIMIZED
 }: TaggedUsersDisplayProps) {
+  // OPTIMIZED: Start with the count, only fetch details when modal opens
+  const [tagCount, setTagCount] = useState(initialCount)
   const [taggedUsers, setTaggedUsers] = useState<TaggedUser[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // OPTIMIZED: Don't load on mount
   const [showModal, setShowModal] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -36,6 +39,7 @@ export function TaggedUsersDisplay({
   const [showTooltip, setShowTooltip] = useState(false)
   const [authorId, setAuthorId] = useState<string | null>(null)
   const [postedAsType, setPostedAsType] = useState<'user' | 'organization' | 'faith_admin'>('user')
+  const [detailsLoaded, setDetailsLoaded] = useState(false) // OPTIMIZED: Track if we've loaded details
   const iconRef = useRef<HTMLDivElement>(null)
 
   const supabase = createBrowserClient(
@@ -43,11 +47,14 @@ export function TaggedUsersDisplay({
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
+  // OPTIMIZED: Only load details when modal opens
   useEffect(() => {
-    loadTags()
-  }, [contentType, contentId])
+    if (showModal && !detailsLoaded) {
+      loadTagDetails()
+    }
+  }, [showModal])
 
-  const loadTags = async () => {
+  const loadTagDetails = async () => {
     try {
       setLoading(true)
       
@@ -100,7 +107,6 @@ export function TaggedUsersDisplay({
           setPostedAsType('user')
         }
       } else if (contentType === 'free_wall_post') {
-        // Handle free wall posts
         const { data: fwData } = await supabase
           .from('free_wall_posts')
           .select('author_id')
@@ -135,13 +141,17 @@ export function TaggedUsersDisplay({
           mappedUsers.sort((a, b) => a.name.localeCompare(b.name))
           setTaggedUsers(mappedUsers)
           setSelectedUserIds(userIds)
+          setTagCount(mappedUsers.length)
         }
       } else {
         setTaggedUsers([])
         setSelectedUserIds([])
+        setTagCount(0)
       }
+      
+      setDetailsLoaded(true)
     } catch (error) {
-      console.error('Error loading tags:', error)
+      console.error('Error loading tag details:', error)
     } finally {
       setLoading(false)
     }
@@ -158,7 +168,7 @@ export function TaggedUsersDisplay({
 
       if (error) throw error
 
-      await loadTags()
+      await loadTagDetails()
       if (onTagsUpdated) onTagsUpdated()
     } catch (error) {
       console.error('Error removing tag:', error)
@@ -198,7 +208,7 @@ export function TaggedUsersDisplay({
           .insert(newTags)
       }
 
-      await loadTags()
+      await loadTagDetails()
       setIsEditMode(false)
       if (onTagsUpdated) onTagsUpdated()
     } catch (error) {
@@ -225,39 +235,36 @@ export function TaggedUsersDisplay({
   const topThreeUsers = taggedUsers.slice(0, 3)
   const remainingCount = taggedUsers.length - 3
 
-  if (loading) {
-    return (
-      <div className="inline-flex items-center gap-1">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
-      </div>
-    )
-  }
-
+  // OPTIMIZED: No loading spinner on initial render
   return (
     <>
-      {/* Trigger Icon */}
+      {/* Trigger Icon - OPTIMIZED: Shows count immediately */}
       <div className="relative inline-block">
         <div
           ref={iconRef}
-          onMouseEnter={() => setShowTooltip(true)}
+          onMouseEnter={() => {
+            setShowTooltip(true)
+            // OPTIMIZED: Pre-load details on hover for instant modal open
+            if (!detailsLoaded) loadTagDetails()
+          }}
           onMouseLeave={() => setShowTooltip(false)}
           onClick={() => {
-            if (canEdit || isCurrentUserTagged) {
+            if (canEdit || isCurrentUserTagged || tagCount > 0) {
               setShowModal(true)
             }
           }}
           className={`inline-flex items-center gap-1.5 p-1.5 px-2 rounded-full transition-all ${
-            canEdit || isCurrentUserTagged 
+            canEdit || isCurrentUserTagged || tagCount > 0
               ? 'cursor-pointer hover:bg-blue-50 border border-transparent hover:border-blue-100' 
               : 'cursor-default'
           }`}
         >
           <UserCheck className={`h-4 w-4 ${
-            taggedUsers.length > 0 ? 'text-blue-600' : 'text-gray-400'
+            tagCount > 0 ? 'text-blue-600' : 'text-gray-400'
           }`} />
-          {taggedUsers.length > 0 && (
+          {tagCount > 0 && (
             <span className="text-xs font-bold text-blue-600">
-              {taggedUsers.length}
+              {tagCount}
             </span>
           )}
         </div>
@@ -265,9 +272,9 @@ export function TaggedUsersDisplay({
         {/* Hover Tooltip */}
         {showTooltip && (
           <div className="absolute left-0 top-full mt-2 z-50 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl whitespace-nowrap min-w-[120px]">
-            {taggedUsers.length === 0 ? (
+            {tagCount === 0 ? (
               <span className="text-gray-300">No users tagged</span>
-            ) : (
+            ) : detailsLoaded ? (
               <div className="space-y-1.5">
                 <div className="font-semibold text-gray-300 border-b border-gray-700 pb-1 mb-1">Tagged:</div>
                 {topThreeUsers.map((user) => (
@@ -280,12 +287,17 @@ export function TaggedUsersDisplay({
                   <div className="text-gray-400 pl-3.5 italic">and {remainingCount} more...</div>
                 )}
               </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading...
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* LARGE MODAL */}
+      {/* MODAL - Only renders when open */}
       {showModal && (
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 sm:p-6"
@@ -294,12 +306,11 @@ export function TaggedUsersDisplay({
             setIsEditMode(false)
           }}
         >
-          {/* Modal Container */}
           <div 
             className="bg-white rounded-2xl w-full max-w-3xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 1. Header (Sticky) */}
+            {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-white flex-shrink-0">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-blue-50 rounded-xl">
@@ -327,10 +338,13 @@ export function TaggedUsersDisplay({
               </button>
             </div>
 
-            {/* 2. Content Body (Scrollable) */}
+            {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 bg-white">
-              {!isEditMode ? (
-                // VIEW MODE
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : !isEditMode ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {taggedUsers.length === 0 ? (
                     <div className="col-span-full flex flex-col items-center justify-center h-64 text-gray-500">
@@ -382,7 +396,6 @@ export function TaggedUsersDisplay({
                   )}
                 </div>
               ) : (
-                // EDIT MODE
                 <div className="max-w-xl mx-auto py-2">
                    <TagUserSelector
                     selectedUsers={selectedUserIds}
@@ -394,7 +407,7 @@ export function TaggedUsersDisplay({
               )}
             </div>
 
-            {/* 3. Footer (Sticky) */}
+            {/* Footer */}
             <div className="p-6 border-t border-gray-100 bg-gray-50 flex-shrink-0">
               {!isEditMode ? (
                 <div className="flex gap-4">

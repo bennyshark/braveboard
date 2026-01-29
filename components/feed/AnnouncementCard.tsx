@@ -1,4 +1,4 @@
-// components/feed/AnnouncementCard.tsx - UPDATED with new TaggedUsersDisplay
+// components/feed/AnnouncementCard.tsx - OPTIMIZED to use pre-fetched data
 "use client"
 
 import { useState, useEffect } from "react"
@@ -25,6 +25,10 @@ type Announcement = {
   comments: number
   allowComments: boolean
   createdAt: string
+  reactionCount?: number // OPTIMIZED: Pre-fetched
+  repostCount?: number // OPTIMIZED: Pre-fetched
+  createdBy?: string // OPTIMIZED: Pre-fetched
+  taggedUsersCount?: number // OPTIMIZED: Pre-fetched
 }
 
 interface AnnouncementCardProps {
@@ -36,9 +40,12 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [showComments, setShowComments] = useState(true)
-  const [reactionCount, setReactionCount] = useState(0)
-  const [repostCount, setRepostCount] = useState(0)
+  
+  // OPTIMIZED: Initialize with prop data
+  const [reactionCount, setReactionCount] = useState(announcement.reactionCount || 0)
+  const [repostCount, setRepostCount] = useState(announcement.repostCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
 
   const supabase = createBrowserClient(
@@ -47,23 +54,47 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   )
 
   useEffect(() => {
-    loadData()
+    // OPTIMIZED: Only fetch user data, not announcement data
+    loadUserData()
   }, [announcement.id])
+
+  const loadUserData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUserId(user?.id || null)
+      
+      // OPTIMIZED: Use pre-fetched createdBy if available
+      if (announcement.createdBy) {
+        setCanEditTags(user?.id === announcement.createdBy)
+      } else {
+        // Fallback: fetch if not provided
+        const { data: announcementData } = await supabase
+          .from('announcements')
+          .select('created_by')
+          .eq('id', announcement.id)
+          .single()
+
+        if (announcementData) {
+          setCanEditTags(user?.id === announcementData.created_by)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error)
+    }
+  }
 
   const loadData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-
+      // OPTIMIZED: Only refetch when data changes (after reactions/reposts)
       const { data: announcementData } = await supabase
         .from('announcements')
-        .select('reaction_count, repost_count, created_by')
+        .select('reaction_count, repost_count')
         .eq('id', announcement.id)
         .single()
 
       if (announcementData) {
         setReactionCount(announcementData.reaction_count || 0)
         setRepostCount(announcementData.repost_count || 0)
-        setCanEditTags(user?.id === announcementData.created_by)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -118,14 +149,6 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{announcement.createdAt}</span>
-                    {/* Tagged Users Display */}
-                    <span>•</span>
-                    <TaggedUsersDisplay
-                      contentType="announcement"
-                      contentId={announcement.id}
-                      canEdit={canEditTags}
-                      onTagsUpdated={loadData}
-                    />
                   </div>
                 </div>
 
@@ -140,6 +163,17 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
           </div>
 
           <div className="ml-[60px]">
+            {/* OPTIMIZED: Tagged Users Display with pre-fetched count */}
+            <div className="mb-3">
+              <TaggedUsersDisplay
+                contentType="announcement"
+                contentId={announcement.id}
+                canEdit={canEditTags}
+                onTagsUpdated={loadData}
+                initialCount={announcement.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
+              />
+            </div>
+
             <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
               {announcement.header}
             </h3>

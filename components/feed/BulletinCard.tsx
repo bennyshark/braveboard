@@ -1,9 +1,9 @@
-// components/feed/BulletinCard.tsx - UPDATED with new TaggedUsersDisplay
+// components/feed/BulletinCard.tsx - OPTIMIZED to use pre-fetched data
 "use client"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users } from "lucide-react"
+import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users, Image } from "lucide-react"
 import { BulletinOptionsMenu } from "@/components/menus/BulletinOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { CommentSection } from "@/components/comments/CommentSection"
@@ -25,6 +25,10 @@ type Bulletin = {
   comments: number
   allowComments: boolean
   createdAt: string
+  reactionCount?: number // OPTIMIZED: Pre-fetched
+  repostCount?: number // OPTIMIZED: Pre-fetched
+  createdBy?: string // OPTIMIZED: Pre-fetched
+  taggedUsersCount?: number // OPTIMIZED: Pre-fetched
 }
 
 interface BulletinCardProps {
@@ -37,9 +41,12 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
-  const [reactionCount, setReactionCount] = useState(0)
-  const [repostCount, setRepostCount] = useState(0)
+  
+  // OPTIMIZED: Initialize with prop data
+  const [reactionCount, setReactionCount] = useState(bulletin.reactionCount || 0)
+  const [repostCount, setRepostCount] = useState(bulletin.repostCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
 
   const supabase = createBrowserClient(
@@ -48,23 +55,47 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
   )
 
   useEffect(() => {
-    loadData()
+    // OPTIMIZED: Only fetch user data, not bulletin data
+    loadUserData()
   }, [bulletin.id])
+
+  const loadUserData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUserId(user?.id || null)
+      
+      // OPTIMIZED: Use pre-fetched createdBy if available
+      if (bulletin.createdBy) {
+        setCanEditTags(user?.id === bulletin.createdBy)
+      } else {
+        // Fallback: fetch if not provided
+        const { data: bulletinData } = await supabase
+          .from('bulletins')
+          .select('created_by')
+          .eq('id', bulletin.id)
+          .single()
+
+        if (bulletinData) {
+          setCanEditTags(user?.id === bulletinData.created_by)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error)
+    }
+  }
 
   const loadData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-
+      // OPTIMIZED: Only refetch when data changes (after reactions/reposts)
       const { data: bulletinData } = await supabase
         .from('bulletins')
-        .select('reaction_count, repost_count, created_by')
+        .select('reaction_count, repost_count')
         .eq('id', bulletin.id)
         .single()
 
       if (bulletinData) {
         setReactionCount(bulletinData.reaction_count || 0)
         setRepostCount(bulletinData.repost_count || 0)
-        setCanEditTags(user?.id === bulletinData.created_by)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -74,6 +105,11 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
   const handleReactionChange = () => {
     loadData()
     setRefreshTrigger(prev => prev + 1)
+  }
+
+  const handleImageClick = (index: number) => {
+    setPreviewIndex(index)
+    setPreviewOpen(true)
   }
 
   const getOrganizerColor = (type: string) => {
@@ -88,13 +124,8 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
     switch(type) {
       case "faith": return <Shield className="h-5 w-5 text-white" />
       case "organization": return <Users className="h-5 w-5 text-white" />
-      default: return "📢"
+      default: return "📋"
     }
-  }
-
-  const handleImageClick = (index: number) => {
-    setPreviewIndex(index)
-    setPreviewOpen(true)
   }
 
   return (
@@ -125,17 +156,12 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
                     {bulletin.imageUrls.length > 0 && (
                       <>
                         <span>•</span>
-                        <span>{bulletin.imageUrls.length} {bulletin.imageUrls.length === 1 ? 'image' : 'images'}</span>
+                        <span className="flex items-center gap-1">
+                          <Image className="h-3 w-3" />
+                          {bulletin.imageUrls.length}
+                        </span>
                       </>
                     )}
-                    {/* Tagged Users Display */}
-                    <span>•</span>
-                    <TaggedUsersDisplay
-                      contentType="bulletin"
-                      contentId={bulletin.id}
-                      canEdit={canEditTags}
-                      onTagsUpdated={loadData}
-                    />
                   </div>
                 </div>
 
@@ -150,6 +176,17 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
           </div>
 
           <div className="ml-[60px]">
+            {/* OPTIMIZED: Tagged Users Display with pre-fetched count */}
+            <div className="mb-3">
+              <TaggedUsersDisplay
+                contentType="bulletin"
+                contentId={bulletin.id}
+                canEdit={canEditTags}
+                onTagsUpdated={loadData}
+                initialCount={bulletin.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
+              />
+            </div>
+
             <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
               {bulletin.header}
             </h3>
@@ -159,7 +196,7 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
             </p>
 
             {bulletin.imageUrls.length > 0 && (
-              <div className={`mb-3 ${
+              <div className={`mb-4 ${
                 bulletin.imageUrls.length === 1 ? 'grid grid-cols-1' :
                 bulletin.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
                 'grid grid-cols-2 gap-2'
@@ -174,7 +211,7 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
                   >
                     <img 
                       src={url} 
-                      alt="Bulletin" 
+                      alt={`${bulletin.header} - Image ${idx + 1}`}
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
@@ -188,7 +225,7 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
               <div className="flex items-center gap-1">
                 <ReactionButton 
                   contentType="bulletin"
