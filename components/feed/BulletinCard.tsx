@@ -25,24 +25,24 @@ type Bulletin = {
   comments: number
   allowComments: boolean
   createdAt: string
-  reactionCount?: number // OPTIMIZED: Pre-fetched
-  repostCount?: number // OPTIMIZED: Pre-fetched
-  createdBy?: string // OPTIMIZED: Pre-fetched
-  taggedUsersCount?: number // OPTIMIZED: Pre-fetched
+  reactionCount?: number
+  repostCount?: number
+  createdBy?: string
+  taggedUsersCount?: number
 }
 
 interface BulletinCardProps {
   bulletin: Bulletin
   onUpdate?: () => void
+  onRepostCreated?: (repost: any) => void
 }
 
-export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
+export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(true)
   
-  // OPTIMIZED: Initialize with prop data
   const [reactionCount, setReactionCount] = useState(bulletin.reactionCount || 0)
   const [repostCount, setRepostCount] = useState(bulletin.repostCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
@@ -55,7 +55,6 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
   )
 
   useEffect(() => {
-    // OPTIMIZED: Only fetch user data, not bulletin data
     loadUserData()
   }, [bulletin.id])
 
@@ -64,11 +63,9 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
       
-      // OPTIMIZED: Use pre-fetched createdBy if available
       if (bulletin.createdBy) {
         setCanEditTags(user?.id === bulletin.createdBy)
       } else {
-        // Fallback: fetch if not provided
         const { data: bulletinData } = await supabase
           .from('bulletins')
           .select('created_by')
@@ -86,7 +83,6 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
 
   const loadData = async () => {
     try {
-      // OPTIMIZED: Only refetch when data changes (after reactions/reposts)
       const { data: bulletinData } = await supabase
         .from('bulletins')
         .select('reaction_count, repost_count')
@@ -176,14 +172,13 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
           </div>
 
           <div className="ml-[60px]">
-            {/* OPTIMIZED: Tagged Users Display with pre-fetched count */}
             <div className="mb-3">
               <TaggedUsersDisplay
                 contentType="bulletin"
                 contentId={bulletin.id}
                 canEdit={canEditTags}
                 onTagsUpdated={loadData}
-                initialCount={bulletin.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
+                initialCount={bulletin.taggedUsersCount || 0}
               />
             </div>
 
@@ -256,6 +251,7 @@ export function BulletinCard({ bulletin, onUpdate }: BulletinCardProps) {
                   contentType="bulletin"
                   contentId={bulletin.id}
                   onRepostChange={handleReactionChange}
+                  onRepostCreated={onRepostCreated}
                 />
               </div>
 

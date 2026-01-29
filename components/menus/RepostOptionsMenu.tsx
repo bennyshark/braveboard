@@ -1,3 +1,4 @@
+// components/menus/RepostOptionsMenu.tsx - OPTIMIZED: Immediate UI update on delete
 "use client"
 import { useState, useRef, useEffect } from "react"
 import { MoreVertical, Edit2, Trash2 } from "lucide-react"
@@ -6,16 +7,16 @@ import { EditRepostDialog } from "./EditRepostDialog"
 
 interface RepostOptionsMenuProps {
   repostId: string
-  userId: string // This is the ID of the person who created the repost
+  userId: string
   comment: string
-  onUpdate: () => void
+  onDelete?: (repostId: string) => void
 }
 
 export function RepostOptionsMenu({ 
   repostId, 
   userId, 
   comment,
-  onUpdate
+  onDelete
 }: RepostOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -33,11 +34,9 @@ export function RepostOptionsMenu({
   useEffect(() => {
     async function checkPermissions() {
       try {
-        // 1. Get current authenticated user
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // 2. Fetch the current user's profile to check for admin role
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
@@ -47,11 +46,7 @@ export function RepostOptionsMenu({
         const isAdmin = profile?.role === 'admin'
         const isOwner = user.id === userId
 
-        // 3. Set permissions
-        // Only the owner can edit the content
         setCanEdit(isOwner)
-        
-        // Owner OR Admin can delete
         setCanDelete(isOwner || isAdmin)
 
       } catch (error) {
@@ -81,8 +76,13 @@ export function RepostOptionsMenu({
       const { error } = await supabase.from('reposts').delete().eq('id', repostId)
       if (error) throw error
       
+      console.log('Repost deleted successfully, triggering immediate UI update...')
       setShowMenu(false)
-      onUpdate()
+      
+      // OPTIMIZED: Immediately call onDelete to remove from state
+      if (onDelete) {
+        onDelete(repostId)
+      }
     } catch (error: any) {
       console.error('Error deleting repost:', error)
       alert(`Failed to delete: ${error.message}`)
@@ -91,7 +91,6 @@ export function RepostOptionsMenu({
     }
   }
 
-  // If loading, or if the user has NO permissions, return null
   if (loading || (!canEdit && !canDelete)) return null
 
   return (
@@ -109,7 +108,6 @@ export function RepostOptionsMenu({
 
       {showMenu && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border-2 border-gray-200 z-50 overflow-hidden">
-          {/* Only show Edit if they are the owner */}
           {canEdit && (
             <button
               onClick={(e) => {
@@ -124,7 +122,6 @@ export function RepostOptionsMenu({
             </button>
           )}
 
-          {/* Show Delete if Owner OR Admin */}
           {canDelete && (
             <button
               onClick={(e) => {
@@ -134,8 +131,8 @@ export function RepostOptionsMenu({
               disabled={deleting}
               className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-medium transition-colors border-t border-gray-100 disabled:opacity-50
                 ${canEdit 
-                  ? 'hover:bg-red-50 text-red-600 hover:text-red-700' // Styling if it's the owner (standard delete)
-                  : 'bg-red-50 text-red-700 hover:bg-red-100' // Styling if it's admin (highlighted action)
+                  ? 'hover:bg-red-50 text-red-600 hover:text-red-700'
+                  : 'bg-red-50 text-red-700 hover:bg-red-100'
                 }
               `}
             >
@@ -151,7 +148,10 @@ export function RepostOptionsMenu({
           repostId={repostId}
           initialComment={comment}
           onClose={() => setShowEditDialog(false)}
-          onUpdate={onUpdate}
+          onUpdate={() => {
+            // Editing doesn't need full reload, just close dialog
+            setShowEditDialog(false)
+          }}
         />
       )}
     </div>

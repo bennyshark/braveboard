@@ -25,23 +25,23 @@ type Announcement = {
   comments: number
   allowComments: boolean
   createdAt: string
-  reactionCount?: number // OPTIMIZED: Pre-fetched
-  repostCount?: number // OPTIMIZED: Pre-fetched
-  createdBy?: string // OPTIMIZED: Pre-fetched
-  taggedUsersCount?: number // OPTIMIZED: Pre-fetched
+  reactionCount?: number
+  repostCount?: number
+  createdBy?: string
+  taggedUsersCount?: number
 }
 
 interface AnnouncementCardProps {
   announcement: Announcement
   onUpdate?: () => void
+  onRepostCreated?: (repost: any) => void
 }
 
-export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardProps) {
+export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: AnnouncementCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [showComments, setShowComments] = useState(true)
   
-  // OPTIMIZED: Initialize with prop data
   const [reactionCount, setReactionCount] = useState(announcement.reactionCount || 0)
   const [repostCount, setRepostCount] = useState(announcement.repostCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
@@ -54,7 +54,6 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
   )
 
   useEffect(() => {
-    // OPTIMIZED: Only fetch user data, not announcement data
     loadUserData()
   }, [announcement.id])
 
@@ -63,11 +62,9 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
       
-      // OPTIMIZED: Use pre-fetched createdBy if available
       if (announcement.createdBy) {
         setCanEditTags(user?.id === announcement.createdBy)
       } else {
-        // Fallback: fetch if not provided
         const { data: announcementData } = await supabase
           .from('announcements')
           .select('created_by')
@@ -85,7 +82,6 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
 
   const loadData = async () => {
     try {
-      // OPTIMIZED: Only refetch when data changes (after reactions/reposts)
       const { data: announcementData } = await supabase
         .from('announcements')
         .select('reaction_count, repost_count')
@@ -163,14 +159,13 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
           </div>
 
           <div className="ml-[60px]">
-            {/* OPTIMIZED: Tagged Users Display with pre-fetched count */}
             <div className="mb-3">
               <TaggedUsersDisplay
                 contentType="announcement"
                 contentId={announcement.id}
                 canEdit={canEditTags}
                 onTagsUpdated={loadData}
-                initialCount={announcement.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
+                initialCount={announcement.taggedUsersCount || 0}
               />
             </div>
 
@@ -227,6 +222,7 @@ export function AnnouncementCard({ announcement, onUpdate }: AnnouncementCardPro
                   contentType="announcement"
                   contentId={announcement.id}
                   onRepostChange={handleReactionChange}
+                  onRepostCreated={onRepostCreated}
                 />
               </div>
 

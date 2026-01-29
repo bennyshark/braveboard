@@ -1,4 +1,4 @@
-// app/(site)/event/[id]/page.tsx - FIXED duplicate keys issue
+// app/(site)/event/[id]/page.tsx - WITH REPOST NAVIGATION
 "use client"
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
@@ -192,6 +192,14 @@ function EventDetailsContent() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
+  // NEW: Handle repost creation from event page
+  const handleRepostCreated = (repostData: any) => {
+    console.log('Repost created from event page:', repostData)
+    
+    // Navigate to home page free_wall with the new repost
+    router.push(`/home?tab=free_wall&scrollTo=${repostData.id}`)
+  }
+
   const loadEventData = async () => {
     setIsLoading(true)
     try {
@@ -282,7 +290,6 @@ function EventDetailsContent() {
         }
       })
 
-      // Load posts progressively
       await loadPosts(INITIAL_POSTS, true)
 
     } catch (error) {
@@ -350,7 +357,6 @@ function EventDetailsContent() {
         setInitialBatchLoaded(true)
         setShouldAutoLoad(true)
       } else {
-        // DEDUPLICATION: Filter out posts that already exist
         setPosts(prev => {
           const existingIds = new Set(prev.map(p => p.id))
           const newPosts = mappedPosts.filter(p => !existingIds.has(p.id))
@@ -368,7 +374,6 @@ function EventDetailsContent() {
     }
   }
 
-  // Auto-load second batch
   useEffect(() => {
     if (shouldAutoLoad && initialBatchLoaded && !isLoading) {
       const timer = setTimeout(() => {
@@ -379,7 +384,6 @@ function EventDetailsContent() {
     }
   }, [shouldAutoLoad, initialBatchLoaded, isLoading])
 
-  // Infinite scroll
   useEffect(() => {
     if (shouldAutoLoad || !initialBatchLoaded || isLoading) {
       return
@@ -615,7 +619,13 @@ function EventDetailsContent() {
                       highlightedId === post.id ? 'ring-4 ring-blue-400 rounded-xl' : ''
                     }`}
                   >
-                    <PostCard post={post} eventId={eventId} onPostUpdated={handlePostCreated} onPostDeleted={handlePostCreated} />
+                    <PostCard 
+                      post={post} 
+                      eventId={eventId} 
+                      onPostUpdated={handlePostCreated} 
+                      onPostDeleted={handlePostCreated}
+                      onRepostCreated={handleRepostCreated}
+                    />
                   </div>
                 ))}
                 

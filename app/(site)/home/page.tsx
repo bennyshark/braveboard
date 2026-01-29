@@ -1,4 +1,4 @@
-// app/(site)/home/page.tsx - FULLY OPTIMIZED: Pre-fetch EVERYTHING including announcements
+// app/(site)/home/page.tsx - OPTIMIZED: Direct state updates for create/delete
 "use client"
 
 import { useState, useEffect, Suspense, useRef } from "react"
@@ -15,7 +15,6 @@ import { RepostCard } from "@/components/feed/RepostCard"
 import { CreateFreeWallPostDialog } from "@/components/posts/CreateFreeWallPostDialog"
 import { useSearchParams } from "next/navigation"
 
-// ... (keep all type definitions the same as before)
 type Announcement = {
   id: string
   header: string
@@ -28,10 +27,10 @@ type Announcement = {
   comments: number
   allowComments: boolean
   createdAt: string
-  reactionCount?: number // OPTIMIZED
-  repostCount?: number // OPTIMIZED
-  createdBy?: string // OPTIMIZED
-  taggedUsersCount?: number // OPTIMIZED
+  reactionCount?: number
+  repostCount?: number
+  createdBy?: string
+  taggedUsersCount?: number
 }
 
 type Bulletin = {
@@ -46,10 +45,10 @@ type Bulletin = {
   comments: number
   allowComments: boolean
   createdAt: string
-  reactionCount?: number // OPTIMIZED
-  repostCount?: number // OPTIMIZED
-  createdBy?: string // OPTIMIZED
-  taggedUsersCount?: number // OPTIMIZED
+  reactionCount?: number
+  repostCount?: number
+  createdBy?: string
+  taggedUsersCount?: number
 }
 
 type FreeWallPost = {
@@ -76,6 +75,7 @@ type OriginalContent = {
   authorId?: string
   authorName?: string
   authorAvatar?: string | null
+  authorType?: string
   creatorName?: string
   creatorAvatar?: string | null
   creatorType?: string
@@ -88,6 +88,7 @@ type OriginalContent = {
   reposterAvatar?: string | null
   contentType?: string
   contentId?: string
+  originalContent?: OriginalContent | null
 }
 
 type Repost = {
@@ -173,6 +174,39 @@ function HomeContent() {
     setPendingScrollTo({ tab, id: contentId })
   }
 
+  const handleRepostCreated = (repostData: any) => {
+    console.log('Repost created:', repostData)
+    
+    const newFreeWallItem: FreeWallItem = {
+      type: 'repost',
+      data: {
+        id: repostData.id,
+        userId: repostData.userId,
+        userName: repostData.userName,
+        userAvatar: repostData.userAvatar,
+        contentType: repostData.contentType,
+        contentId: repostData.contentId,
+        repostComment: repostData.repostComment,
+        createdAt: repostData.createdAt,
+        originalContent: repostData.originalContent,
+        taggedUsersCount: repostData.taggedUsersCount || 0
+      },
+      timestamp: new Date(repostData.createdAtRaw).getTime(),
+      createdAtRaw: repostData.createdAtRaw
+    }
+
+    setFreeWallItems(prev => [newFreeWallItem, ...prev])
+
+    if (activeFeedFilter !== 'free_wall') {
+      setActiveFeedFilter('free_wall')
+    }
+
+    setPendingScrollTo({ tab: 'free_wall', id: repostData.id })
+    setHighlightedId(repostData.id)
+    
+    setTimeout(() => setHighlightedId(null), 3000)
+  }
+
   const loadUserData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -255,6 +289,176 @@ function HomeContent() {
           })
         }
       }
+
+      if (repost.content_type === 'post') {
+        const { data } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let authorName = 'Unknown User'
+        let authorAvatar: string | null = null
+        let authorType = 'user'
+
+        if (data.posted_as_type === 'faith_admin') {
+          authorName = 'FAITH Administration'
+          authorType = 'faith_admin'
+        } else if (data.posted_as_type === 'organization' && data.posted_as_org_id) {
+          const { data: orgData } = await supabase
+            .from('organizations')
+            .select('name, avatar_url')
+            .eq('id', data.posted_as_org_id)
+            .maybeSingle()
+          
+          if (orgData) {
+            authorName = orgData.name
+            authorAvatar = orgData.avatar_url
+            authorType = 'organization'
+          }
+        } else {
+          const { data: userData } = await supabase
+            .from('profiles')
+            .select('id, first_name, last_name, avatar_url')
+            .eq('id', data.author_id)
+            .maybeSingle()
+          
+          if (userData) {
+            authorName = `${userData.first_name} ${userData.last_name}`
+            authorAvatar = userData.avatar_url
+          }
+        }
+
+        return {
+          type: 'post',
+          id: data.id,
+          content: data.content,
+          authorId: data.author_id,
+          authorName,
+          authorAvatar,
+          authorType,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+
+      if (repost.content_type === 'bulletin') {
+        const { data } = await supabase
+          .from('bulletins')
+          .select(`
+            *,
+            creator_org:organizations(name, avatar_url)
+          `)
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let creatorName = 'Unknown'
+        let creatorAvatar: string | null = null
+        let creatorType = 'user'
+
+        if (data.creator_type === 'faith_admin') {
+          creatorName = 'FAITH Administration'
+          creatorType = 'faith_admin'
+        } else if (data.creator_type === 'organization' && data.creator_org) {
+          creatorName = data.creator_org.name
+          creatorAvatar = data.creator_org.avatar_url
+          creatorType = 'organization'
+        }
+
+        return {
+          type: 'bulletin',
+          id: data.id,
+          header: data.header,
+          body: data.body,
+          creatorName,
+          creatorAvatar,
+          creatorType,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+
+      if (repost.content_type === 'announcement') {
+        const { data } = await supabase
+          .from('announcements')
+          .select(`
+            *,
+            creator_org:organizations(name, avatar_url)
+          `)
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let creatorName = 'Unknown'
+        let creatorAvatar: string | null = null
+        let creatorType = 'user'
+
+        if (data.creator_type === 'faith_admin') {
+          creatorName = 'FAITH Administration'
+          creatorType = 'faith_admin'
+        } else if (data.creator_type === 'organization' && data.creator_org) {
+          creatorName = data.creator_org.name
+          creatorAvatar = data.creator_org.avatar_url
+          creatorType = 'organization'
+        }
+
+        return {
+          type: 'announcement',
+          id: data.id,
+          header: data.header,
+          body: data.body,
+          creatorName,
+          creatorAvatar,
+          creatorType,
+          imageUrl: data.image_url,
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+
+      if (repost.content_type === 'repost') {
+        const { data } = await supabase
+          .from('reposts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        const { data: reposterData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .eq('id', data.user_id)
+          .maybeSingle()
+
+        const nestedOriginal = await fetchOriginalContent(data)
+
+        return {
+          type: 'repost',
+          id: data.id,
+          comment: data.repost_comment,
+          reposterId: reposterData?.id,
+          reposterName: reposterData ? `${reposterData.first_name} ${reposterData.last_name}` : 'Unknown User',
+          reposterAvatar: reposterData?.avatar_url || null,
+          contentType: data.content_type,
+          contentId: data.content_id,
+          originalContent: nestedOriginal,
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+
       return null
     } catch (error) {
       console.error('Error fetching original content:', error)
@@ -668,12 +872,10 @@ function HomeContent() {
     }
   }
 
-  // OPTIMIZED: Load announcements with all data pre-fetched
   const loadAnnouncements = async () => {
     try {
       setIsLoadingAnnouncements(true)
       
-      // Fetch announcements with ALL needed data
       const { data: announcementsData, error } = await supabase
         .from('announcements')
         .select(`
@@ -685,7 +887,6 @@ function HomeContent() {
 
       if (error) throw error
 
-      // OPTIMIZED: Fetch tag counts in bulk
       const announcementIds = announcementsData.map((a: any) => a.id)
       
       const { data: tagCounts } = await supabase
@@ -725,7 +926,6 @@ function HomeContent() {
           createdAt: new Date(row.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           }),
-          // OPTIMIZED: Pre-fetch these values
           reactionCount: row.reaction_count || 0,
           repostCount: row.repost_count || 0,
           createdBy: row.created_by,
@@ -742,7 +942,6 @@ function HomeContent() {
     }
   }
 
-  // OPTIMIZED: Load bulletins with all data pre-fetched
   const loadBulletins = async () => {
     try {
       setIsLoadingBulletins(true)
@@ -758,7 +957,6 @@ function HomeContent() {
 
       if (error) throw error
 
-      // OPTIMIZED: Fetch tag counts in bulk
       const bulletinIds = bulletinsData.map((b: any) => b.id)
       
       const { data: tagCounts } = await supabase
@@ -798,7 +996,6 @@ function HomeContent() {
           createdAt: new Date(row.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
           }),
-          // OPTIMIZED: Pre-fetch these values
           reactionCount: row.reaction_count || 0,
           repostCount: row.repost_count || 0,
           createdBy: row.created_by,
@@ -836,6 +1033,67 @@ function HomeContent() {
         await loadBulletins()
         break
     }
+  }
+
+  // OPTIMIZED: Direct state update for post deletion
+  const handlePostDeleted = (postId: string) => {
+    console.log('Removing post from state:', postId)
+    setFreeWallItems(prev => prev.filter(item => item.data.id !== postId))
+  }
+
+  // OPTIMIZED: Direct state update for repost deletion
+  const handleRepostDeleted = (repostId: string) => {
+    console.log('Removing repost from state:', repostId)
+    setFreeWallItems(prev => prev.filter(item => item.data.id !== repostId))
+  }
+
+  // OPTIMIZED: Direct state update for post creation
+  const handlePostCreated = async (newPostData: any) => {
+    console.log('Adding new post to state:', newPostData)
+    
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data: userData } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, avatar_url')
+      .eq('id', user.id)
+      .single()
+
+    if (!userData) return
+
+    const newPost: FreeWallItem = {
+      type: 'post',
+      data: {
+        id: newPostData.id,
+        content: newPostData.content,
+        authorId: user.id,
+        authorName: `${userData.first_name} ${userData.last_name}`,
+        authorAvatar: userData.avatar_url,
+        imageUrls: newPostData.image_urls || [],
+        reactionCount: 0,
+        comments: 0,
+        repostCount: 0,
+        createdAt: new Date(newPostData.created_at).toLocaleString('en-US', { 
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+        }),
+        editedAt: null,
+        taggedUsersCount: 0
+      },
+      timestamp: new Date(newPostData.created_at).getTime(),
+      createdAtRaw: newPostData.created_at
+    }
+
+    setFreeWallItems(prev => [newPost, ...prev])
+    
+    if (activeFeedFilter !== 'free_wall') {
+      setActiveFeedFilter('free_wall')
+    }
+
+    setPendingScrollTo({ tab: 'free_wall', id: newPostData.id })
+    setHighlightedId(newPostData.id)
+    
+    setTimeout(() => setHighlightedId(null), 3000)
   }
 
   useEffect(() => {
@@ -970,18 +1228,6 @@ function HomeContent() {
 
   const handleEventDeleted = (eventId: string) => {
     setEvents(prev => prev.filter(e => e.id !== eventId))
-  }
-
-  const handleFreeWallUpdate = () => {
-    setLastTimestamp(null)
-    setInitialBatchLoaded(false)
-    setShouldAutoLoad(false)
-    setLoadedTabs(prev => {
-      const newSet = new Set(prev)
-      newSet.delete('free_wall')
-      return newSet
-    })
-    loadTabData('free_wall')
   }
 
   const filteredEvents = events.filter(event => {
@@ -1149,12 +1395,16 @@ function HomeContent() {
                       }`}
                     >
                       {item.type === 'post' ? (
-                        <FreeWallCard post={item.data as FreeWallPost} onUpdate={handleFreeWallUpdate} />
+                        <FreeWallCard 
+                          post={item.data as FreeWallPost} 
+                          onDelete={handlePostDeleted}
+                          onRepostCreated={handleRepostCreated}
+                        />
                       ) : (
                         <RepostCard 
                           repost={item.data as Repost} 
                           originalContent={(item.data as Repost).originalContent}
-                          onUpdate={handleFreeWallUpdate} 
+                          onDelete={handleRepostDeleted}
                           onNavigateToContent={handleNavigateToContent}
                         />
                       )}
@@ -1211,7 +1461,11 @@ function HomeContent() {
                       highlightedId === bulletin.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
                     }`}
                   >
-                    <BulletinCard bulletin={bulletin} onUpdate={loadBulletins} />
+                    <BulletinCard 
+                      bulletin={bulletin} 
+                      onUpdate={loadBulletins}
+                      onRepostCreated={handleRepostCreated}
+                    />
                   </div>
                 ))}
                 
@@ -1238,7 +1492,11 @@ function HomeContent() {
                       highlightedId === announcement.id ? 'ring-4 ring-blue-400 rounded-2xl' : ''
                     }`}
                   >
-                    <AnnouncementCard announcement={announcement} onUpdate={loadAnnouncements} />
+                    <AnnouncementCard 
+                      announcement={announcement} 
+                      onUpdate={loadAnnouncements}
+                      onRepostCreated={handleRepostCreated}
+                    />
                   </div>
                 ))}
                 
@@ -1274,6 +1532,7 @@ function HomeContent() {
                       onToggleHide={(e) => toggleHideEvent(event.id, e)}
                       onPostCreated={loadEvents}
                       onEventDeleted={() => handleEventDeleted(event.id)}
+                      onRepostCreated={handleRepostCreated}
                     />
                   </div>
                 ))}
@@ -1293,7 +1552,7 @@ function HomeContent() {
       <CreateFreeWallPostDialog
         isOpen={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
-        onPostCreated={handleFreeWallUpdate}
+        onPostCreated={handlePostCreated}
       />
     </div>
   )

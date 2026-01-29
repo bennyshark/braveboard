@@ -1,4 +1,4 @@
-// components/feed/RepostCard.tsx - OPTIMIZED with pre-fetched data
+// components/feed/RepostCard.tsx - OPTIMIZED: Direct state update on delete
 "use client"
 
 import { useState, useEffect } from "react"
@@ -21,6 +21,7 @@ type OriginalContent = {
   authorId?: string
   authorName?: string
   authorAvatar?: string | null
+  authorType?: string
   creatorName?: string
   creatorAvatar?: string | null
   creatorType?: string
@@ -33,6 +34,7 @@ type OriginalContent = {
   reposterAvatar?: string | null
   contentType?: string
   contentId?: string
+  originalContent?: any
 }
 
 type Repost = {
@@ -53,11 +55,12 @@ type Repost = {
 interface RepostCardProps {
   repost: Repost
   originalContent?: OriginalContent | null
-  onUpdate?: () => void
+  onDelete?: (repostId: string) => void
   onNavigateToContent?: (tab: string, contentId: string) => void
+  onRepostCreated?: (repost: any) => void
 }
 
-export function RepostCard({ repost, originalContent: propOriginalContent, onUpdate, onNavigateToContent }: RepostCardProps) {
+export function RepostCard({ repost, originalContent: propOriginalContent, onDelete, onNavigateToContent, onRepostCreated }: RepostCardProps) {
   const router = useRouter()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -76,7 +79,6 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
     loadRepostData()
   }, [repost.id])
 
-  // Use prop data if available, otherwise fallback
   useEffect(() => {
     if (propOriginalContent) {
       setOriginalContent(propOriginalContent)
@@ -87,7 +89,6 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
     try {
       const { data: { user } } = await supabase.auth.getUser()
 
-      // Load latest repost data
       const { data: repostData } = await supabase
         .from('reposts')
         .select('*')
@@ -121,6 +122,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
   const getCreatorColor = (type: string) => {
     switch(type) {
       case "faith": return "from-purple-400 to-purple-600"
+      case "faith_admin": return "from-purple-400 to-purple-600"
       case "organization": return "from-orange-400 to-orange-600"
       default: return "from-blue-400 to-blue-600"
     }
@@ -129,6 +131,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
   const getCreatorIcon = (type: string) => {
     switch(type) {
       case "faith": return <Shield className="h-4 w-4 text-white" />
+      case "faith_admin": return <Shield className="h-4 w-4 text-white" />
       case "organization": return <Users className="h-4 w-4 text-white" />
       default: return null
     }
@@ -137,7 +140,6 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
   const handleOriginalContentClick = () => {
     if (!originalContent || !onNavigateToContent) return
     
-    // Use callback to navigate without page reload
     if (originalContent.type === 'free_wall_post') {
       onNavigateToContent('free_wall', originalContent.id)
     } else if (originalContent.type === 'post') {
@@ -149,6 +151,89 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
     } else if (originalContent.type === 'repost') {
       onNavigateToContent('free_wall', originalContent.id)
     }
+  }
+
+  const renderImageGrid = (images: string[]) => {
+    if (!images || images.length === 0) return null
+
+    const count = images.length
+
+    if (count === 1) {
+      return (
+        <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
+          <img 
+            src={images[0]} 
+            alt="" 
+            className="w-full h-full object-cover" 
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )
+    }
+
+    if (count === 2) {
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          {images.map((url, idx) => (
+            <div key={idx} className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+              <img 
+                src={url} 
+                alt="" 
+                className="w-full h-full object-cover" 
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (count === 3) {
+      return (
+        <div className="space-y-2">
+          <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
+            <img 
+              src={images[0]} 
+              alt="" 
+              className="w-full h-full object-cover" 
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {images.slice(1, 3).map((url, idx) => (
+              <div key={idx} className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                <img 
+                  src={url} 
+                  alt="" 
+                  className="w-full h-full object-cover" 
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        {images.slice(0, 4).map((url, idx) => (
+          <div key={idx} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
+            <img 
+              src={url} 
+              alt="" 
+              className="w-full h-full object-cover" 
+              onClick={(e) => e.stopPropagation()}
+            />
+            {idx === 3 && count > 4 && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <span className="text-white text-2xl font-bold">+{count - 4}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )
   }
 
   return (
@@ -205,10 +290,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
                 repostId={repost.id}
                 userId={repost.userId}
                 comment={repost.repostComment || ''}
-                onUpdate={() => {
-                  loadRepostData()
-                  if (onUpdate) onUpdate()
-                }}
+                onDelete={onDelete}
               />
             </div>
           </div>
@@ -242,9 +324,9 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
               <span className="font-medium">Original {originalContent.type.replace('_', ' ')}</span>
             </div>
             
+            {/* FREE WALL POST or POST */}
             {(originalContent.type === 'free_wall_post' || originalContent.type === 'post') && (
               <div>
-                {/* Author Info */}
                 <div className="flex items-center gap-3 mb-3">
                   <button
                     onClick={(e) => {
@@ -262,8 +344,12 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
                         className="h-10 w-10 rounded-lg object-cover shadow-sm" 
                       />
                     ) : (
-                      <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-sm">
-                        <span className="text-white font-bold text-sm">{getInitials(originalContent.authorName || 'U')}</span>
+                      <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(originalContent.authorType || 'user')} flex items-center justify-center shadow-sm`}>
+                        {originalContent.authorType && originalContent.authorType !== 'user' ? (
+                          getCreatorIcon(originalContent.authorType)
+                        ) : (
+                          <span className="text-white font-bold text-sm">{getInitials(originalContent.authorName || 'U')}</span>
+                        )}
                       </div>
                     )}
                     <div className="text-left">
@@ -276,35 +362,19 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
                   </button>
                 </div>
                 
-                {/* Content */}
                 <p className="text-gray-700 text-sm leading-relaxed mb-3 whitespace-pre-wrap">{originalContent.content}</p>
                 
-                {/* Images */}
                 {originalContent.imageUrls && originalContent.imageUrls.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {originalContent.imageUrls.slice(0, 4).map((url: string, idx: number) => (
-                      <div key={idx} className="relative">
-                        <img 
-                          src={url} 
-                          alt="" 
-                          className="rounded-lg w-full aspect-square object-cover" 
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        {idx === 3 && originalContent.imageUrls && originalContent.imageUrls.length > 4 && (
-                          <div className="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center">
-                            <span className="text-white text-lg font-bold">+{originalContent.imageUrls.length - 4}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="mt-3">
+                    {renderImageGrid(originalContent.imageUrls)}
                   </div>
                 )}
               </div>
             )}
 
+            {/* BULLETIN or ANNOUNCEMENT */}
             {(originalContent.type === 'bulletin' || originalContent.type === 'announcement') && (
               <div>
-                {/* Creator Info */}
                 <div className="flex items-center gap-3 mb-3">
                   {originalContent.creatorAvatar ? (
                     <img 
@@ -333,36 +403,30 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
                 <h4 className="font-bold text-gray-900 mb-2 text-base">{originalContent.header}</h4>
                 <p className="text-gray-700 text-sm leading-relaxed mb-2">{originalContent.body}</p>
                 
-                {/* Images for bulletin */}
                 {originalContent.imageUrls && originalContent.imageUrls.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2 mt-3">
-                    {originalContent.imageUrls.slice(0, 4).map((url: string, idx: number) => (
-                      <img 
-                        key={idx} 
-                        src={url} 
-                        alt="" 
-                        className="rounded-lg w-full aspect-square object-cover"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ))}
+                  <div className="mt-3">
+                    {renderImageGrid(originalContent.imageUrls)}
                   </div>
                 )}
                 
-                {/* Image for announcement */}
                 {originalContent.imageUrl && (
-                  <img 
-                    src={originalContent.imageUrl} 
-                    alt="" 
-                    className="rounded-lg w-full mt-3 max-h-64 object-cover"
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  <div className="mt-3">
+                    <div className="aspect-video rounded-lg overflow-hidden bg-gray-100">
+                      <img 
+                        src={originalContent.imageUrl} 
+                        alt="" 
+                        className="w-full h-full object-cover"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )}
 
+            {/* NESTED REPOST */}
             {originalContent.type === 'repost' && (
               <div>
-                {/* Reposter Info */}
                 <div className="flex items-center gap-3 mb-3">
                   <button
                     onClick={(e) => {
@@ -400,9 +464,21 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
                   </button>
                 </div>
                 
-                {/* Comment */}
                 {originalContent.comment && (
-                  <p className="text-gray-700 text-sm leading-relaxed">{originalContent.comment}</p>
+                  <p className="text-gray-700 text-sm leading-relaxed mb-3">{originalContent.comment}</p>
+                )}
+
+                {/* Nested original content preview */}
+                {originalContent.originalContent && (
+                  <div className="ml-4 pl-4 border-l-2 border-gray-300 mt-3">
+                    <div className="text-xs text-gray-500 mb-2">
+                      <Repeat2 className="h-3 w-3 inline mr-1" />
+                      Original {originalContent.originalContent.type?.replace('_', ' ')}
+                    </div>
+                    <p className="text-gray-600 text-sm italic">
+                      {originalContent.originalContent.content || originalContent.originalContent.header || 'Content preview unavailable'}
+                    </p>
+                  </div>
                 )}
               </div>
             )}
@@ -443,6 +519,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onUpd
               contentType="repost"
               contentId={repost.id}
               onRepostChange={handleReactionChange}
+              onRepostCreated={onRepostCreated}
             />
           </div>
 

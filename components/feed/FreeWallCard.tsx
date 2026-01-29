@@ -1,4 +1,4 @@
-// components/feed/FreeWallCard.tsx - Complete
+// components/feed/FreeWallCard.tsx - OPTIMIZED: Direct state update on delete
 "use client"
 
 import { useState, useEffect } from "react"
@@ -29,10 +29,11 @@ type FreeWallPost = {
 
 interface FreeWallCardProps {
   post: FreeWallPost
-  onUpdate?: () => void
+  onDelete?: (postId: string) => void
+  onRepostCreated?: (repost: any) => void
 }
 
-export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
+export function FreeWallCard({ post, onDelete, onRepostCreated }: FreeWallCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
@@ -159,9 +160,7 @@ export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
                   postId={post.id}
                   authorId={post.authorId}
                   content={post.content}
-                  onUpdate={() => {
-                    if (onUpdate) onUpdate()
-                  }}
+                  onDelete={onDelete}
                 />
               </div>
             </div>
@@ -233,6 +232,7 @@ export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
                 contentType="free_wall_post"
                 contentId={post.id}
                 onRepostChange={handleReactionChange}
+                onRepostCreated={onRepostCreated}
               />
             </div>
 

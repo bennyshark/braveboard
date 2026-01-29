@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - OPTIMIZED with tag count support
+// components/feed/PostCard.tsx - with repost navigation
 "use client"
 
 import { useState, useEffect } from "react"
@@ -19,6 +19,7 @@ interface PostCardProps {
   eventId?: string
   onPostDeleted?: () => void
   onPostUpdated?: () => void
+  onRepostCreated?: (repost: any) => void
 }
 
 type PostIdentity = {
@@ -27,14 +28,13 @@ type PostIdentity = {
   avatarUrl: string | null
 }
 
-export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCardProps) {
+export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepostCreated }: PostCardProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(false)
   
-  // OPTIMIZED: Use prop data if available
   const [commentCount, setCommentCount] = useState(post.comments)
   const [reactionCount, setReactionCount] = useState(post.reactionCount || 0)
   const [repostCount, setRepostCount] = useState(post.repostCount || 0)
@@ -44,7 +44,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
   
-  // OPTIMIZED: Initialize with prop data
   const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>(() => {
     if (post.postedAsType === 'faith_admin') {
       return {
@@ -310,14 +309,13 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
             </div>
           </div>
 
-          {/* OPTIMIZED: Tagged Users with pre-fetched count */}
           <div className="mb-3">
             <TaggedUsersDisplay
               contentType="post"
               contentId={post.id}
               canEdit={canEditTags}
               onTagsUpdated={handlePostUpdate}
-              initialCount={post.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
+              initialCount={post.taggedUsersCount || 0}
             />
           </div>
 
@@ -383,6 +381,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                 contentType="post"
                 contentId={post.id}
                 onRepostChange={handleReactionChange}
+                onRepostCreated={onRepostCreated}
               />
               <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
                 <Share2 className="h-3.5 w-3.5" />
