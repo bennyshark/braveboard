@@ -1,4 +1,3 @@
-// components/menus/RepostOptionsMenu.tsx
 "use client"
 import { useState, useRef, useEffect } from "react"
 import { MoreVertical, Edit2, Trash2 } from "lucide-react"
@@ -7,7 +6,7 @@ import { EditRepostDialog } from "./EditRepostDialog"
 
 interface RepostOptionsMenuProps {
   repostId: string
-  userId: string
+  userId: string // This is the ID of the person who created the repost
   comment: string
   onUpdate: () => void
 }
@@ -34,12 +33,26 @@ export function RepostOptionsMenu({
   useEffect(() => {
     async function checkPermissions() {
       try {
+        // 1. Get current authenticated user
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // User can edit/delete their own reposts
-        setCanEdit(user.id === userId)
-        setCanDelete(user.id === userId)
+        // 2. Fetch the current user's profile to check for admin role
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        const isAdmin = profile?.role === 'admin'
+        const isOwner = user.id === userId
+
+        // 3. Set permissions
+        // Only the owner can edit the content
+        setCanEdit(isOwner)
+        
+        // Owner OR Admin can delete
+        setCanDelete(isOwner || isAdmin)
 
       } catch (error) {
         console.error('Error checking permissions:', error)
@@ -78,6 +91,7 @@ export function RepostOptionsMenu({
     }
   }
 
+  // If loading, or if the user has NO permissions, return null
   if (loading || (!canEdit && !canDelete)) return null
 
   return (
@@ -95,6 +109,7 @@ export function RepostOptionsMenu({
 
       {showMenu && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border-2 border-gray-200 z-50 overflow-hidden">
+          {/* Only show Edit if they are the owner */}
           {canEdit && (
             <button
               onClick={(e) => {
@@ -109,6 +124,7 @@ export function RepostOptionsMenu({
             </button>
           )}
 
+          {/* Show Delete if Owner OR Admin */}
           {canDelete && (
             <button
               onClick={(e) => {
@@ -116,7 +132,12 @@ export function RepostOptionsMenu({
                 handleDelete()
               }}
               disabled={deleting}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-left text-sm font-medium text-red-600 hover:text-red-700 transition-colors border-t border-gray-100 disabled:opacity-50"
+              className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-medium transition-colors border-t border-gray-100 disabled:opacity-50
+                ${canEdit 
+                  ? 'hover:bg-red-50 text-red-600 hover:text-red-700' // Styling if it's the owner (standard delete)
+                  : 'bg-red-50 text-red-700 hover:bg-red-100' // Styling if it's admin (highlighted action)
+                }
+              `}
             >
               <Trash2 className="h-4 w-4" />
               {deleting ? 'Deleting...' : 'Delete Repost'}
