@@ -7,7 +7,7 @@ import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, Chevro
 import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
 import { ImagePreviewModal } from "./ImagePreviewModal"
-import { SingleImageDisplay } from "./SingleImageDisplay" // Make sure this import matches your file structure
+import { SingleImageDisplay } from "./SingleImageDisplay"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
@@ -27,6 +27,7 @@ type PostIdentity = {
   type: 'user' | 'organization' | 'faith_admin'
   name: string
   avatarUrl: string | null
+  id: string | null // Added ID for navigation
 }
 
 export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepostCreated }: PostCardProps) {
@@ -50,19 +51,22 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
       return {
         type: 'faith_admin',
         name: 'FAITH Administration',
-        avatarUrl: null
+        avatarUrl: null,
+        id: null // Faith admin doesn't need an ID for navigation, it has a fixed route
       }
     } else if (post.postedAsType === 'organization') {
       return {
         type: 'organization',
         name: post.author,
-        avatarUrl: post.avatarUrl
+        avatarUrl: post.avatarUrl,
+        id: (post as any).postedAsOrgId || null // Try to get from post data, otherwise will be fetched
       }
     }
     return {
       type: 'user',
       name: post.author,
-      avatarUrl: post.avatarUrl
+      avatarUrl: post.avatarUrl,
+      id: post.authorId // User ID is already available
     }
   })
   
@@ -104,35 +108,44 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
-      if (!post.postedAsType) {
-        if (postData.posted_as_type === 'user') {
-          setDisplayIdentity({
-            type: 'user',
-            name: post.author,
-            avatarUrl: post.avatarUrl
-          })
-        }
-        else if (postData.posted_as_type === 'faith_admin') {
-          setDisplayIdentity({
-            type: 'faith_admin',
-            name: 'FAITH Administration',
-            avatarUrl: null
-          })
-        }
-        else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
-          const { data: orgData } = await supabase
-            .from('organizations')
-            .select('name, avatar_url')
-            .eq('id', postData.posted_as_org_id)
-            .single()
+      // Handle identity based on posted_as_type
+      if (postData.posted_as_type === 'user') {
+        setDisplayIdentity({
+          type: 'user',
+          name: post.author,
+          avatarUrl: post.avatarUrl,
+          id: postData.author_id
+        })
+      }
+      else if (postData.posted_as_type === 'faith_admin') {
+        setDisplayIdentity({
+          type: 'faith_admin',
+          name: 'FAITH Administration',
+          avatarUrl: null,
+          id: null
+        })
+      }
+      else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
+        // Fetch organization details
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('name, avatar_url')
+          .eq('id', postData.posted_as_org_id)
+          .single()
 
-          if (orgData) {
-            setDisplayIdentity({
-              type: 'organization',
-              name: orgData.name,
-              avatarUrl: orgData.avatar_url || null
-            })
-          }
+        if (orgData) {
+          setDisplayIdentity({
+            type: 'organization',
+            name: orgData.name,
+            avatarUrl: orgData.avatar_url || null,
+            id: postData.posted_as_org_id
+          })
+        } else {
+          // If we can't fetch org details, at least set the ID
+          setDisplayIdentity(prev => ({
+            ...prev,
+            id: postData.posted_as_org_id
+          }))
         }
       }
     } catch (error) {
@@ -143,7 +156,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
   }
 
   useEffect(() => {
-    const needsFetch = !post.postedAsType || !eventId
+    const needsFetch = !post.postedAsType || !eventId || 
+                       (post.postedAsType === 'organization' && !displayIdentity.id)
     
     if (needsFetch) {
       setLoading(true)
@@ -166,8 +180,27 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
     setRefreshTrigger(prev => prev + 1)
   }
 
-  const handleUserClick = (userId: string) => {
-    router.push(`/user/${userId}`)
+  // Handle author/organizer click navigation
+  const handleAuthorClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+
+    switch (displayIdentity.type) {
+      case 'faith_admin':
+        router.push('/faith-admin')
+        break
+      case 'organization':
+        if (displayIdentity.id) {
+          router.push(`/organization/${displayIdentity.id}`)
+        }
+        break
+      case 'user':
+      default:
+        if (displayIdentity.id) {
+          router.push(`/user/${displayIdentity.id}`)
+        }
+        break
+    }
   }
 
   const getAuthorColor = (type: string) => {
@@ -199,7 +232,11 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
     setPreviewOpen(true)
   }
 
-  // --- NEW: Optimized Multi-Image Layout Renderer (Ported from FreeWallCard) ---
+  // Check if author is clickable (must have an ID or be faith_admin)
+  const isAuthorClickable = displayIdentity.type === 'faith_admin' || 
+                            (displayIdentity.id !== null && displayIdentity.id !== undefined)
+
+  // Optimized Multi-Image Layout Renderer
   const renderMultipleImages = () => {
     const count = post.imageUrls.length
 
@@ -347,19 +384,24 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
         <div className="p-6">
           {/* Header */}
           <div className="flex items-start gap-3 mb-4">
+            {/* Clickable Avatar */}
             <button
-              onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
-              disabled={displayIdentity.type !== 'user'}
-              className={displayIdentity.type === 'user' ? 'cursor-pointer' : 'cursor-default'}
+              onClick={handleAuthorClick}
+              disabled={!isAuthorClickable}
+              className={isAuthorClickable ? 'cursor-pointer' : 'cursor-default'}
             >
               {displayIdentity.avatarUrl ? (
                 <img 
                   src={displayIdentity.avatarUrl} 
                   alt={displayIdentity.name}
-                  className="h-12 w-12 rounded-xl object-cover flex-shrink-0 shadow-sm hover:opacity-80 transition-opacity"
+                  className={`h-12 w-12 rounded-xl object-cover flex-shrink-0 shadow-sm ${
+                    isAuthorClickable ? 'hover:opacity-80 transition-opacity' : ''
+                  }`}
                 />
               ) : (
-                <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+                <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center flex-shrink-0 shadow-sm ${
+                  isAuthorClickable ? 'hover:opacity-80 transition-opacity' : ''
+                }`}>
                   {displayIdentity.type !== 'user' ? (
                     getIdentityIcon(displayIdentity.type)
                   ) : (
@@ -372,10 +414,13 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Clickable Author Name */}
                     <button
-                      onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
-                      disabled={displayIdentity.type !== 'user'}
-                      className={`font-bold text-gray-900 ${displayIdentity.type === 'user' ? 'hover:underline cursor-pointer' : 'cursor-default'}`}
+                      onClick={handleAuthorClick}
+                      disabled={!isAuthorClickable}
+                      className={`font-bold text-gray-900 ${
+                        isAuthorClickable ? 'hover:underline cursor-pointer hover:text-blue-600 transition-colors' : 'cursor-default'
+                      }`}
                     >
                       {displayIdentity.name}
                     </button>
@@ -447,7 +492,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
           {/* Content */}
           <p className="text-gray-800 leading-relaxed whitespace-pre-wrap mb-4">{post.content}</p>
 
-          {/* NEW: Replaced Simple Grid with Optimized Layouts */}
+          {/* Images with Optimized Layouts */}
           {post.imageUrls.length === 1 ? (
             <SingleImageDisplay
               imageUrl={post.imageUrls[0]}

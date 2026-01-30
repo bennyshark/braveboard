@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users, Image } from "lucide-react"
 import { AnnouncementOptionsMenu } from "@/components/menus/AnnouncementOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
-import { SingleImageDisplay } from "./SingleImageDisplay" // Added import
+import { SingleImageDisplay } from "./SingleImageDisplay"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
@@ -30,6 +30,7 @@ type Announcement = {
   repostCount?: number
   createdBy?: string
   taggedUsersCount?: number
+  organizerId?: string
 }
 
 interface AnnouncementCardProps {
@@ -49,13 +50,14 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
+  const [organizerId, setOrganizerId] = useState<string | null>(announcement.organizerId || null)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  // 2. Logic to safely get the array of images
+  // Logic to safely get the array of images
   const displayImages = useMemo(() => {
     if (Array.isArray(announcement.imageUrls) && announcement.imageUrls.length > 0) {
       return announcement.imageUrls
@@ -72,17 +74,19 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
       
-      if (announcement.createdBy) {
-        setCanEditTags(user?.id === announcement.createdBy)
-      } else {
-        const { data: announcementData } = await supabase
-          .from('announcements')
-          .select('created_by')
-          .eq('id', announcement.id)
-          .single()
+      // Fetch announcement data including creator_org_id
+      const { data: announcementData } = await supabase
+        .from('announcements')
+        .select('created_by, creator_org_id, creator_type')
+        .eq('id', announcement.id)
+        .single()
 
-        if (announcementData) {
-          setCanEditTags(user?.id === announcementData.created_by)
+      if (announcementData) {
+        setCanEditTags(user?.id === announcementData.created_by)
+        
+        // Set organizer ID if not already set
+        if (!organizerId && announcementData.creator_org_id) {
+          setOrganizerId(announcementData.creator_org_id)
         }
       }
     } catch (error) {
@@ -94,13 +98,17 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
     try {
       const { data: announcementData } = await supabase
         .from('announcements')
-        .select('reaction_count, repost_count')
+        .select('reaction_count, repost_count, creator_org_id')
         .eq('id', announcement.id)
         .single()
 
       if (announcementData) {
         setReactionCount(announcementData.reaction_count || 0)
         setRepostCount(announcementData.repost_count || 0)
+        
+        if (announcementData.creator_org_id) {
+          setOrganizerId(announcementData.creator_org_id)
+        }
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -115,6 +123,18 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
   const handleImageClick = (index: number) => {
     setPreviewIndex(index)
     setPreviewOpen(true)
+  }
+
+  // Handle organizer click navigation
+  const handleOrganizerClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+
+    if (announcement.organizerType === 'faith') {
+      router.push('/faith-admin')
+    } else if (announcement.organizerType === 'organization' && organizerId) {
+      router.push(`/organization/${organizerId}`)
+    }
   }
 
   const getOrganizerColor = (type: string) => {
@@ -132,6 +152,10 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
       default: return "📢"
     }
   }
+
+  // Check if organizer is clickable
+  const isOrganizerClickable = announcement.organizerType === 'faith' || 
+                                (announcement.organizerType === 'organization' && organizerId)
 
   // Optimized multi-image layout renderer
   const renderMultipleImages = () => {
@@ -264,15 +288,31 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
       <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
         <div className="p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+            {/* Clickable Organizer Avatar */}
+            <button
+              onClick={handleOrganizerClick}
+              disabled={!isOrganizerClickable}
+              className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm ${
+                isOrganizerClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'
+              }`}
+            >
               {getOrganizerIcon(announcement.organizerType)}
-            </div>
+            </button>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h5 className="font-bold text-gray-900">{announcement.organizerName}</h5>
+                    {/* Clickable Organizer Name */}
+                    <button
+                      onClick={handleOrganizerClick}
+                      disabled={!isOrganizerClickable}
+                      className={`font-bold text-gray-900 ${
+                        isOrganizerClickable ? 'hover:underline cursor-pointer hover:text-blue-600 transition-colors' : 'cursor-default'
+                      }`}
+                    >
+                      {announcement.organizerName}
+                    </button>
                     {announcement.isPinned && (
                       <span className="inline-flex items-center gap-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-xs font-bold">
                         <Pin className="h-3 w-3 fill-current" />
@@ -284,7 +324,6 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{announcement.createdAt}</span>
-                    {/* 3. Show Image count in metadata */}
                     {displayImages.length > 0 && (
                       <>
                         <span>•</span>
@@ -324,7 +363,7 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
             {announcement.body}
           </p>
 
-          {/* 4. Display Images - Optimized Layouts */}
+          {/* Display Images - Optimized Layouts */}
           {displayImages.length === 1 ? (
             <SingleImageDisplay
               imageUrl={displayImages[0]}

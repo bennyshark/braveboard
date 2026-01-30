@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { Pin, Clock, MessageCircle, ChevronDown, ChevronUp, Shield, Users, Image } from "lucide-react"
 import { BulletinOptionsMenu } from "@/components/menus/BulletinOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
-import { SingleImageDisplay } from "./SingleImageDisplay" // Added import
+import { SingleImageDisplay } from "./SingleImageDisplay"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
@@ -30,6 +30,7 @@ type Bulletin = {
   repostCount?: number
   createdBy?: string
   taggedUsersCount?: number
+  organizerId?: string
 }
 
 interface BulletinCardProps {
@@ -49,6 +50,7 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
+  const [organizerId, setOrganizerId] = useState<string | null>(bulletin.organizerId || null)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,17 +66,19 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
       
-      if (bulletin.createdBy) {
-        setCanEditTags(user?.id === bulletin.createdBy)
-      } else {
-        const { data: bulletinData } = await supabase
-          .from('bulletins')
-          .select('created_by')
-          .eq('id', bulletin.id)
-          .single()
+      // Fetch bulletin data including creator_org_id
+      const { data: bulletinData } = await supabase
+        .from('bulletins')
+        .select('created_by, creator_org_id, creator_type')
+        .eq('id', bulletin.id)
+        .single()
 
-        if (bulletinData) {
-          setCanEditTags(user?.id === bulletinData.created_by)
+      if (bulletinData) {
+        setCanEditTags(user?.id === bulletinData.created_by)
+        
+        // Set organizer ID if not already set
+        if (!organizerId && bulletinData.creator_org_id) {
+          setOrganizerId(bulletinData.creator_org_id)
         }
       }
     } catch (error) {
@@ -86,13 +90,17 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
     try {
       const { data: bulletinData } = await supabase
         .from('bulletins')
-        .select('reaction_count, repost_count')
+        .select('reaction_count, repost_count, creator_org_id')
         .eq('id', bulletin.id)
         .single()
 
       if (bulletinData) {
         setReactionCount(bulletinData.reaction_count || 0)
         setRepostCount(bulletinData.repost_count || 0)
+        
+        if (bulletinData.creator_org_id) {
+          setOrganizerId(bulletinData.creator_org_id)
+        }
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -107,6 +115,18 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
   const handleImageClick = (index: number) => {
     setPreviewIndex(index)
     setPreviewOpen(true)
+  }
+
+  // Handle organizer click navigation
+  const handleOrganizerClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+
+    if (bulletin.organizerType === 'faith') {
+      router.push('/faith-admin')
+    } else if (bulletin.organizerType === 'organization' && organizerId) {
+      router.push(`/organization/${organizerId}`)
+    }
   }
 
   const getOrganizerColor = (type: string) => {
@@ -124,6 +144,10 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
       default: return "📋"
     }
   }
+
+  // Check if organizer is clickable
+  const isOrganizerClickable = bulletin.organizerType === 'faith' || 
+                                (bulletin.organizerType === 'organization' && organizerId)
 
   // Optimized multi-image layout renderer
   const renderMultipleImages = () => {
@@ -256,15 +280,31 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
       <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
         <div className="p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+            {/* Clickable Organizer Avatar */}
+            <button
+              onClick={handleOrganizerClick}
+              disabled={!isOrganizerClickable}
+              className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm ${
+                isOrganizerClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'
+              }`}
+            >
               {getOrganizerIcon(bulletin.organizerType)}
-            </div>
+            </button>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h5 className="font-bold text-gray-900">{bulletin.organizerName}</h5>
+                    {/* Clickable Organizer Name */}
+                    <button
+                      onClick={handleOrganizerClick}
+                      disabled={!isOrganizerClickable}
+                      className={`font-bold text-gray-900 ${
+                        isOrganizerClickable ? 'hover:underline cursor-pointer hover:text-blue-600 transition-colors' : 'cursor-default'
+                      }`}
+                    >
+                      {bulletin.organizerName}
+                    </button>
                     {bulletin.isPinned && (
                       <span className="inline-flex items-center gap-1 bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full text-xs font-bold">
                         <Pin className="h-3 w-3 fill-current" />

@@ -1,4 +1,4 @@
-// components/comments/CommentSection.tsx - FULLY OPTIMIZED WITH CACHE
+// components/comments/CommentSection.tsx 
 "use client"
 import { useState, useEffect, useMemo } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
