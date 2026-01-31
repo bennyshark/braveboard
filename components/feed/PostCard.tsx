@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
+import { MessageCircle, Clock, Image, Shield, Users, ChevronDown, ChevronUp, Pin } from "lucide-react"
 import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
 import { ImagePreviewModal } from "./ImagePreviewModal"
@@ -547,9 +547,6 @@ export function PostCard({
                 onRepostChange={handleReactionChange}
                 onRepostCreated={onRepostCreated}
               />
-              <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
-                <Share2 className="h-3.5 w-3.5" />
-              </button>
             </div>
 
             {/* Stats */}

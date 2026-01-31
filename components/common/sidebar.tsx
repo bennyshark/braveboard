@@ -5,19 +5,26 @@ import {
   Home, 
   Calendar, 
   Image, 
-  Settings,
-  MessageSquare,
   Users,
-  Briefcase,
   FileText,
   User,
   Bookmark,
   LogOut,
-  Shield
+  Shield,
+  LucideIcon
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter, usePathname } from "next/navigation"
+
+interface MenuItem {
+  id: string
+  label: string
+  icon: LucideIcon
+  path: string
+  disabled?: boolean
+  disabledLabel?: string
+}
 
 export default function Sidebar() {
   const [userProfile, setUserProfile] = useState<any>(null)
@@ -26,17 +33,15 @@ export default function Sidebar() {
   const router = useRouter()
   const pathname = usePathname()
 
-  const baseMenuItems = [
+  const baseMenuItems: MenuItem[] = [
     { id: "home", label: "Home", icon: Home, path: "/home" },
     { id: "calendar", label: "Calendar", icon: Calendar, path: "/calendar" },
     { id: "gallery", label: "Gallery", icon: Image, path: "/gallery" },
-    { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
-    { id: "research", label: "Research", icon: FileText, path: "/research" },
-    { id: "departments", label: "Departments", icon: Briefcase, path: "/departments" },
+    { id: "research", label: "Research", icon: FileText, path: "/research", disabled: true, disabledLabel: "Unavailable" },
     { id: "organizations", label: "Organizations", icon: Users, path: "/organization" },
   ]
 
-  const adminMenuItems = [
+  const adminMenuItems: MenuItem[] = [
     { id: "admin", label: "Admin", icon: Shield, path: "/admin/import-profiles" }
   ]
 
@@ -138,23 +143,36 @@ export default function Sidebar() {
               {menuItems.map((item) => {
                 const Icon = item.icon
                 const active = isActive(item.path)
+                const isDisabled = item.disabled
                 
                 return (
                   <button
                     key={item.id}
-                    onClick={() => handleNavigation(item.path)}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
-                      active
+                    onClick={() => !isDisabled && handleNavigation(item.path)}
+                    disabled={isDisabled}
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group relative ${
+                      isDisabled
+                        ? "text-stone-300 cursor-not-allowed bg-stone-50 border-2 border-stone-100"
+                        : active
                         ? "bg-white border-2 border-stone-100 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] text-blue-700"
                         : "text-stone-600 hover:bg-stone-50 hover:text-stone-900 border-2 border-transparent"
                     }`}
                   >
                     <Icon className={`h-5 w-5 transition-colors ${
-                      active ? "text-blue-500 fill-blue-50" : "text-stone-400 group-hover:text-stone-600"
+                      isDisabled 
+                        ? "text-stone-300" 
+                        : active 
+                        ? "text-blue-500 fill-blue-50" 
+                        : "text-stone-400 group-hover:text-stone-600"
                     }`} />
                     <span className="font-semibold text-sm">{item.label}</span>
-                    {item.id === "admin" && (
+                    {item.id === "admin" && !isDisabled && (
                       <div className="ml-auto h-2 w-2 rounded-full bg-blue-500" />
+                    )}
+                    {isDisabled && item.disabledLabel && (
+                      <span className="ml-auto text-xs bg-stone-200 text-stone-500 px-2 py-0.5 rounded-full font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                        {item.disabledLabel}
+                      </span>
                     )}
                   </button>
                 )
@@ -178,18 +196,6 @@ export default function Sidebar() {
               >
                 <User className="h-5 w-5 text-stone-400" />
                 <span className="font-semibold text-sm">Profile</span>
-              </button>
-
-              <button 
-                onClick={() => handleNavigation("/settings")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-colors ${
-                  isActive("/settings") 
-                    ? "bg-white border-2 border-stone-100 shadow-sm text-blue-700" 
-                    : "text-stone-600 hover:bg-stone-50"
-                }`}
-              >
-                <Settings className="h-5 w-5 text-stone-400" />
-                <span className="font-semibold text-sm">Settings</span>
               </button>
 
               <button 
