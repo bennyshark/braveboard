@@ -1,4 +1,4 @@
-// components/posts/CreatePostDialog.tsx - UPDATED with TagUserSelector
+// components/posts/CreatePostDialog.tsx - UPDATED with avatar rendering
 "use client"
 
 import { useState, useRef, useEffect } from "react"
@@ -18,6 +18,7 @@ type PostingIdentity = {
   id?: string
   name: string
   icon: 'user' | 'org' | 'faith'
+  avatarUrl?: string | null
 }
 
 const MAX_IMAGES = 150
@@ -57,7 +58,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('first_name, last_name, role')
+          .select('first_name, last_name, role, avatar_url')
           .eq('id', user.id)
           .single()
 
@@ -68,15 +69,23 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
         identities.push({
           type: 'user',
           name: userName,
-          icon: 'user'
+          icon: 'user',
+          avatarUrl: profile?.avatar_url || null
         })
 
         const isFaithAdmin = profile?.role === 'admin'
         if (isFaithAdmin) {
+          // Fetch Faith Admin avatar
+          const { data: faithAdminData } = await supabase
+            .from('faith_admin_settings')
+            .select('avatar_url')
+            .single()
+
           identities.push({
             type: 'faith_admin',
             name: 'FAITH Administration',
-            icon: 'faith'
+            icon: 'faith',
+            avatarUrl: faithAdminData?.avatar_url || null
           })
         }
 
@@ -94,7 +103,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
           .select(`
             organization_id,
             role,
-            organization:organizations!inner(id, name)
+            organization:organizations!inner(id, name, avatar_url)
           `)
           .eq('user_id', user.id)
           .in('role', ['officer', 'admin'])
@@ -118,7 +127,8 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
               type: 'organization',
               id: uo.organization.id,
               name: uo.organization.name,
-              icon: 'org'
+              icon: 'org',
+              avatarUrl: uo.organization.avatar_url || null
             })
           })
         }
@@ -266,6 +276,23 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
     }
   }
 
+  const renderIdentityAvatar = (identity: PostingIdentity) => {
+    if (identity.avatarUrl) {
+      return (
+        <img 
+          src={identity.avatarUrl} 
+          alt={identity.name}
+          className="h-10 w-10 rounded-lg object-cover"
+        />
+      )
+    }
+    return (
+      <div className={`p-2 ${getIdentityBgColor(identity.icon)} rounded-lg`}>
+        {getIdentityIcon(identity.icon)}
+      </div>
+    )
+  }
+
   if (!isOpen) return null
 
   const charCount = content.length
@@ -311,9 +338,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
                 className="w-full flex items-center justify-between gap-3 p-4 bg-gray-50 border-2 border-gray-200 rounded-xl hover:border-gray-300 transition-all"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 ${getIdentityBgColor(selectedIdentity?.icon || 'user')} rounded-lg`}>
-                    {getIdentityIcon(selectedIdentity?.icon || 'user')}
-                  </div>
+                  {selectedIdentity && renderIdentityAvatar(selectedIdentity)}
                   <span className="font-bold text-gray-900">{selectedIdentity?.name}</span>
                 </div>
                 <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
@@ -330,9 +355,7 @@ export function CreatePostDialog({ isOpen, onClose, eventId, onPostCreated }: Cr
                       }}
                       className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-left"
                     >
-                      <div className={`p-2 ${getIdentityBgColor(identity.icon)} rounded-lg`}>
-                        {getIdentityIcon(identity.icon)}
-                      </div>
+                      {renderIdentityAvatar(identity)}
                       <div>
                         <div className="font-bold text-gray-900">{identity.name}</div>
                         <div className="text-xs text-gray-500 capitalize">{identity.type.replace('_', ' ')}</div>
