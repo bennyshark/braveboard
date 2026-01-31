@@ -5,13 +5,19 @@ import { useRouter } from "next/navigation"
 import { Plus, ChevronDown, Shield, Users } from "lucide-react"
 import { Organization } from "@/app/(site)/home/types"
 
+type AvatarCache = {
+  faithAdmin: string | null
+  organizations: Map<string, string | null>
+}
+
 interface CreateButtonProps {
   activeFeedFilter: string
   isFaithAdmin: boolean
   userCreateOrgs: Organization[]
+  avatarCache: AvatarCache
 }
 
-export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }: CreateButtonProps) {
+export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs, avatarCache }: CreateButtonProps) {
   const router = useRouter()
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -80,6 +86,41 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
     }
   }
 
+  const renderFaithAdminAvatar = () => {
+    if (avatarCache.faithAdmin) {
+      return (
+        <img 
+          src={avatarCache.faithAdmin} 
+          alt="FAITH Administration"
+          className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
+        />
+      )
+    }
+    return (
+      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+        <Shield className="h-4 w-4 text-white" />
+      </div>
+    )
+  }
+
+  const renderOrgAvatar = (orgId: string, orgName: string) => {
+    const avatarUrl = avatarCache.organizations.get(orgId)
+    if (avatarUrl) {
+      return (
+        <img 
+          src={avatarUrl} 
+          alt={orgName}
+          className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
+        />
+      )
+    }
+    return (
+      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
+        <Users className="h-4 w-4 text-white" />
+      </div>
+    )
+  }
+
   const buttonLabel = activeFeedFilter === 'announcements' 
     ? 'Create Post' 
     : activeFeedFilter === 'bulletin'
@@ -110,9 +151,7 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
                 onClick={() => handleOptionClick('faith_admin')} 
                 className="w-full flex items-center gap-3 px-3 py-3 hover:bg-purple-50 rounded-lg transition-colors text-left"
               >
-                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center flex-shrink-0">
-                  <Shield className="h-4 w-4 text-white" />
-                </div>
+                {renderFaithAdminAvatar()}
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-gray-900 text-sm">FAITH Administration</div>
                 </div>
@@ -125,9 +164,7 @@ export function CreateButton({ activeFeedFilter, isFaithAdmin, userCreateOrgs }:
                 onClick={() => handleOptionClick('organization', org.id)} 
                 className="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 rounded-lg transition-colors text-left"
               >
-                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
-                  <Users className="h-4 w-4 text-white" />
-                </div>
+                {renderOrgAvatar(org.id, org.name)}
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-gray-900 text-sm truncate">{org.name}</div>
                   <div className="text-xs text-gray-500 capitalize">{org.role}</div>
