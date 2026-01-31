@@ -37,9 +37,13 @@ interface AnnouncementCardProps {
   announcement: Announcement
   onUpdate?: () => void
   onRepostCreated?: (repost: any) => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
-export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: AnnouncementCardProps) {
+export function AnnouncementCard({ announcement, onUpdate, onRepostCreated, avatarCache }: AnnouncementCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
@@ -137,6 +141,18 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
     }
   }
 
+  // Get avatar from cache
+  const getOrganizerAvatar = () => {
+    if (!avatarCache) return null
+    
+    if (announcement.organizerType === 'faith') {
+      return avatarCache.faithAdmin
+    } else if (announcement.organizerType === 'organization' && organizerId) {
+      return avatarCache.organizations.get(organizerId) || null
+    }
+    return null
+  }
+
   const getOrganizerColor = (type: string) => {
     switch(type) {
       case "faith": return "from-purple-500 to-indigo-600"
@@ -156,6 +172,8 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
   // Check if organizer is clickable
   const isOrganizerClickable = announcement.organizerType === 'faith' || 
                                 (announcement.organizerType === 'organization' && organizerId)
+
+  const avatarUrl = getOrganizerAvatar()
 
   // Optimized multi-image layout renderer
   const renderMultipleImages = () => {
@@ -292,11 +310,21 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
             <button
               onClick={handleOrganizerClick}
               disabled={!isOrganizerClickable}
-              className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm ${
+              className={`h-12 w-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden ${
+                avatarUrl ? '' : `bg-gradient-to-br ${getOrganizerColor(announcement.organizerType)}`
+              } ${
                 isOrganizerClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'
               }`}
             >
-              {getOrganizerIcon(announcement.organizerType)}
+              {avatarUrl ? (
+                <img 
+                  src={avatarUrl} 
+                  alt={announcement.organizerName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                getOrganizerIcon(announcement.organizerType)
+              )}
             </button>
 
             <div className="flex-1 min-w-0">
@@ -429,6 +457,7 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated }: An
               contentType="announcement"
               contentId={announcement.id}
               initialCount={announcement.comments}
+              avatarCache={avatarCache}
             />
           </div>
         )}

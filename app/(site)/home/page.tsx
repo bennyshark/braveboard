@@ -15,14 +15,19 @@ import { RepostCard } from "@/components/feed/RepostCard"
 import { CreateFreeWallPostDialog } from "@/components/posts/CreateFreeWallPostDialog"
 import { useSearchParams } from "next/navigation"
 
-// CHANGED: Updated to match Bulletin (imageUrls array)
+// ADDED: Avatar cache type
+type AvatarCache = {
+  faithAdmin: string | null
+  organizations: Map<string, string | null>
+}
+
 type Announcement = {
   id: string
   header: string
   body: string
   organizerType: string
   organizerName: string
-  imageUrls: string[] // <--- CHANGED from imageUrl: string | null
+  imageUrls: string[]
   isPinned: boolean
   likes: number
   comments: number
@@ -32,6 +37,7 @@ type Announcement = {
   repostCount?: number
   createdBy?: string
   taggedUsersCount?: number
+  organizerId?: string // ADDED
 }
 
 type Bulletin = {
@@ -50,6 +56,7 @@ type Bulletin = {
   repostCount?: number
   createdBy?: string
   taggedUsersCount?: number
+  organizerId?: string // ADDED
 }
 
 type FreeWallPost = {
@@ -147,6 +154,12 @@ function HomeContent() {
   const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([])
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   
+  // ADDED: Avatar cache state
+  const [avatarCache, setAvatarCache] = useState<AvatarCache>({
+    faithAdmin: null,
+    organizations: new Map()
+  })
+  
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isLoadingFreeWall, setIsLoadingFreeWall] = useState(false)
   const [isLoadingEvents, setIsLoadingEvents] = useState(false)
@@ -206,6 +219,41 @@ function HomeContent() {
     setHighlightedId(repostData.id)
     
     setTimeout(() => setHighlightedId(null), 3000)
+  }
+
+  // ADDED: Prefetch avatars function
+  const prefetchAvatars = async () => {
+    try {
+      console.log('🎨 Prefetching avatars...')
+      
+      // Fetch Faith Admin avatar
+      const { data: faithAdminData } = await supabase
+        .from('faith_admin_settings')
+        .select('avatar_url')
+        .single()
+      
+      // Fetch all organization avatars
+      const { data: orgsData } = await supabase
+        .from('organizations')
+        .select('id, avatar_url')
+      
+      const orgAvatarMap = new Map<string, string | null>()
+      orgsData?.forEach(org => {
+        orgAvatarMap.set(org.id, org.avatar_url)
+      })
+      
+      setAvatarCache({
+        faithAdmin: faithAdminData?.avatar_url || null,
+        organizations: orgAvatarMap
+      })
+      
+      console.log('✅ Avatars prefetched:', {
+        faithAdmin: !!faithAdminData?.avatar_url,
+        orgs: orgAvatarMap.size
+      })
+    } catch (error) {
+      console.error('Error prefetching avatars:', error)
+    }
   }
 
   const loadUserData = async () => {
@@ -307,16 +355,20 @@ function HomeContent() {
         if (data.posted_as_type === 'faith_admin') {
           authorName = 'FAITH Administration'
           authorType = 'faith_admin'
+          // ADDED: Use cached avatar
+          authorAvatar = avatarCache.faithAdmin
         } else if (data.posted_as_type === 'organization' && data.posted_as_org_id) {
+          // ADDED: Use cached avatar
+          authorAvatar = avatarCache.organizations.get(data.posted_as_org_id) || null
+          
           const { data: orgData } = await supabase
             .from('organizations')
-            .select('name, avatar_url')
+            .select('name')
             .eq('id', data.posted_as_org_id)
             .maybeSingle()
           
           if (orgData) {
             authorName = orgData.name
-            authorAvatar = orgData.avatar_url
             authorType = 'organization'
           }
         } else {
@@ -352,7 +404,7 @@ function HomeContent() {
           .from('bulletins')
           .select(`
             *,
-            creator_org:organizations(name, avatar_url)
+            creator_org:organizations(name)
           `)
           .eq('id', repost.content_id)
           .maybeSingle()
@@ -366,9 +418,12 @@ function HomeContent() {
         if (data.creator_type === 'faith_admin') {
           creatorName = 'FAITH Administration'
           creatorType = 'faith_admin'
+          // ADDED: Use cached avatar
+          creatorAvatar = avatarCache.faithAdmin
         } else if (data.creator_type === 'organization' && data.creator_org) {
           creatorName = data.creator_org.name
-          creatorAvatar = data.creator_org.avatar_url
+          // ADDED: Use cached avatar
+          creatorAvatar = avatarCache.organizations.get(data.creator_org_id) || null
           creatorType = 'organization'
         }
 
@@ -392,7 +447,7 @@ function HomeContent() {
           .from('announcements')
           .select(`
             *,
-            creator_org:organizations(name, avatar_url)
+            creator_org:organizations(name)
           `)
           .eq('id', repost.content_id)
           .maybeSingle()
@@ -406,9 +461,12 @@ function HomeContent() {
         if (data.creator_type === 'faith_admin') {
           creatorName = 'FAITH Administration'
           creatorType = 'faith_admin'
+          // ADDED: Use cached avatar
+          creatorAvatar = avatarCache.faithAdmin
         } else if (data.creator_type === 'organization' && data.creator_org) {
           creatorName = data.creator_org.name
-          creatorAvatar = data.creator_org.avatar_url
+          // ADDED: Use cached avatar
+          creatorAvatar = avatarCache.organizations.get(data.creator_org_id) || null
           creatorType = 'organization'
         }
 
@@ -420,7 +478,6 @@ function HomeContent() {
           creatorName,
           creatorAvatar,
           creatorType,
-          // CHANGED: Map to imageUrls array, matching bulletin logic
           imageUrls: data.image_urls || [], 
           createdAt: new Date(data.created_at).toLocaleString('en-US', { 
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
@@ -714,25 +771,20 @@ function HomeContent() {
         ]) || []
       )
 
+      // FIXED: Fetch org names (avatars already cached)
       const orgIds = [...new Set(
         allPosts
           .filter((p: any) => p.posted_as_type === 'organization' && p.posted_as_org_id)
           .map((p: any) => p.posted_as_org_id)
       )]
       
-      const { data: orgsData } = await supabase
+      const { data: orgsDataForPosts } = await supabase
         .from('organizations')
-        .select('id, name, avatar_url')
+        .select('id, name')
         .in('id', orgIds)
 
-      const orgMap = new Map(
-        orgsData?.map(org => [
-          org.id,
-          {
-            name: org.name,
-            avatarUrl: org.avatar_url
-          }
-        ]) || []
+      const orgNameMap = new Map(
+        orgsDataForPosts?.map(org => [org.id, org.name]) || []
       )
 
       const allParticipantOrgIds = new Set<string>()
@@ -809,12 +861,14 @@ function HomeContent() {
 
           if (p.posted_as_type === 'faith_admin') {
             displayName = 'FAITH Administration'
-            displayAvatar = null
+            // ADDED: Use cached avatar
+            displayAvatar = avatarCache.faithAdmin
             displayAuthorType = 'faith_admin'
           } else if (p.posted_as_type === 'organization' && p.posted_as_org_id) {
-            const orgData = orgMap.get(p.posted_as_org_id)
-            displayName = orgData?.name || 'Organization'
-            displayAvatar = orgData?.avatarUrl || null
+            // Use cached avatar
+            displayAvatar = avatarCache.organizations.get(p.posted_as_org_id) || null
+            // Use pre-fetched name
+            displayName = orgNameMap.get(p.posted_as_org_id) || 'Organization'
             displayAuthorType = 'organization'
           } else {
             const authorData = authorMap.get(p.author_id) || { name: 'Unknown User', avatarUrl: null }
@@ -920,7 +974,6 @@ function HomeContent() {
           body: row.body,
           organizerType,
           organizerName,
-          // CHANGED: Use image_urls array directly, just like bulletin
           imageUrls: row.image_urls || [], 
           isPinned: row.is_pinned,
           likes: row.likes || 0,
@@ -932,7 +985,8 @@ function HomeContent() {
           reactionCount: row.reaction_count || 0,
           repostCount: row.repost_count || 0,
           createdBy: row.created_by,
-          taggedUsersCount: tagCountMap.get(row.id) || 0
+          taggedUsersCount: tagCountMap.get(row.id) || 0,
+          organizerId: row.creator_org_id // ADDED
         }
       })
 
@@ -1002,7 +1056,8 @@ function HomeContent() {
           reactionCount: row.reaction_count || 0,
           repostCount: row.repost_count || 0,
           createdBy: row.created_by,
-          taggedUsersCount: tagCountMap.get(row.id) || 0
+          taggedUsersCount: tagCountMap.get(row.id) || 0,
+          organizerId: row.creator_org_id // ADDED
         }
       })
 
@@ -1038,19 +1093,16 @@ function HomeContent() {
     }
   }
 
-  // OPTIMIZED: Direct state update for post deletion
   const handlePostDeleted = (postId: string) => {
     console.log('Removing post from state:', postId)
     setFreeWallItems(prev => prev.filter(item => item.data.id !== postId))
   }
 
-  // OPTIMIZED: Direct state update for repost deletion
   const handleRepostDeleted = (repostId: string) => {
     console.log('Removing repost from state:', repostId)
     setFreeWallItems(prev => prev.filter(item => item.data.id !== repostId))
   }
 
-  // OPTIMIZED: Direct state update for post creation
   const handlePostCreated = async (newPostData: any) => {
     console.log('Adding new post to state:', newPostData)
     
@@ -1113,6 +1165,8 @@ function HomeContent() {
     async function initializeData() {
       setIsInitialLoading(true)
       try {
+        // ADDED: Prefetch avatars first
+        await prefetchAvatars()
         await loadUserData()
         await loadTabData(activeFeedFilter)
       } catch (err) {
@@ -1469,6 +1523,7 @@ function HomeContent() {
                       bulletin={bulletin} 
                       onUpdate={loadBulletins}
                       onRepostCreated={handleRepostCreated}
+                      avatarCache={avatarCache}
                     />
                   </div>
                 ))}
@@ -1500,6 +1555,7 @@ function HomeContent() {
                       announcement={announcement} 
                       onUpdate={loadAnnouncements}
                       onRepostCreated={handleRepostCreated}
+                      avatarCache={avatarCache}
                     />
                   </div>
                 ))}
@@ -1537,6 +1593,7 @@ function HomeContent() {
                       onPostCreated={loadEvents}
                       onEventDeleted={() => handleEventDeleted(event.id)}
                       onRepostCreated={handleRepostCreated}
+                      avatarCache={avatarCache}
                     />
                   </div>
                 ))}

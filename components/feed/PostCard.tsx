@@ -21,16 +21,27 @@ interface PostCardProps {
   onPostDeleted?: () => void
   onPostUpdated?: () => void
   onRepostCreated?: (repost: any) => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
 type PostIdentity = {
   type: 'user' | 'organization' | 'faith_admin'
   name: string
   avatarUrl: string | null
-  id: string | null // Added ID for navigation
+  id: string | null
 }
 
-export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepostCreated }: PostCardProps) {
+export function PostCard({ 
+  post, 
+  eventId, 
+  onPostDeleted, 
+  onPostUpdated, 
+  onRepostCreated,
+  avatarCache 
+}: PostCardProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -51,22 +62,23 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
       return {
         type: 'faith_admin',
         name: 'FAITH Administration',
-        avatarUrl: null,
-        id: null // Faith admin doesn't need an ID for navigation, it has a fixed route
+        avatarUrl: avatarCache?.faithAdmin || null,
+        id: null
       }
     } else if (post.postedAsType === 'organization') {
+      const orgAvatar = avatarCache?.organizations.get((post as any).postedAsOrgId) || post.avatarUrl || null
       return {
         type: 'organization',
         name: post.author,
-        avatarUrl: post.avatarUrl,
-        id: (post as any).postedAsOrgId || null // Try to get from post data, otherwise will be fetched
+        avatarUrl: orgAvatar,
+        id: (post as any).postedAsOrgId || null
       }
     }
     return {
       type: 'user',
       name: post.author,
       avatarUrl: post.avatarUrl,
-      id: post.authorId // User ID is already available
+      id: post.authorId
     }
   })
   
@@ -108,7 +120,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
-      // Handle identity based on posted_as_type
+      // Handle identity based on posted_as_type with cached avatars
       if (postData.posted_as_type === 'user') {
         setDisplayIdentity({
           type: 'user',
@@ -121,15 +133,18 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
         setDisplayIdentity({
           type: 'faith_admin',
           name: 'FAITH Administration',
-          avatarUrl: null,
+          avatarUrl: avatarCache?.faithAdmin || null,
           id: null
         })
       }
       else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
-        // Fetch organization details
+        // Use cached avatar instead of fetching
+        const orgAvatar = avatarCache?.organizations.get(postData.posted_as_org_id) || null
+        
+        // Only fetch name, not avatar
         const { data: orgData } = await supabase
           .from('organizations')
-          .select('name, avatar_url')
+          .select('name')
           .eq('id', postData.posted_as_org_id)
           .single()
 
@@ -137,13 +152,13 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
           setDisplayIdentity({
             type: 'organization',
             name: orgData.name,
-            avatarUrl: orgData.avatar_url || null,
+            avatarUrl: orgAvatar,
             id: postData.posted_as_org_id
           })
         } else {
-          // If we can't fetch org details, at least set the ID
           setDisplayIdentity(prev => ({
             ...prev,
+            avatarUrl: orgAvatar,
             id: postData.posted_as_org_id
           }))
         }
@@ -351,7 +366,6 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
               )}
               
               {isLast && remaining > 0 && (
-                // No blur, just darken
                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                   <span className="text-white text-4xl font-bold drop-shadow-lg">+{remaining}</span>
                 </div>
@@ -561,6 +575,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated, onRepost
               contentId={post.id} 
               eventId={postEventId}
               initialCount={commentCount}
+              avatarCache={avatarCache}
             />
           </div>
         )}

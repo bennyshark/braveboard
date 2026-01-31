@@ -37,9 +37,13 @@ interface BulletinCardProps {
   bulletin: Bulletin
   onUpdate?: () => void
   onRepostCreated?: (repost: any) => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
-export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCardProps) {
+export function BulletinCard({ bulletin, onUpdate, onRepostCreated, avatarCache }: BulletinCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
@@ -129,6 +133,18 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
     }
   }
 
+  // Get avatar from cache
+  const getOrganizerAvatar = () => {
+    if (!avatarCache) return null
+    
+    if (bulletin.organizerType === 'faith') {
+      return avatarCache.faithAdmin
+    } else if (bulletin.organizerType === 'organization' && organizerId) {
+      return avatarCache.organizations.get(organizerId) || null
+    }
+    return null
+  }
+
   const getOrganizerColor = (type: string) => {
     switch(type) {
       case "faith": return "from-purple-500 to-indigo-600"
@@ -148,6 +164,8 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
   // Check if organizer is clickable
   const isOrganizerClickable = bulletin.organizerType === 'faith' || 
                                 (bulletin.organizerType === 'organization' && organizerId)
+
+  const avatarUrl = getOrganizerAvatar()
 
   // Optimized multi-image layout renderer
   const renderMultipleImages = () => {
@@ -284,11 +302,21 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
             <button
               onClick={handleOrganizerClick}
               disabled={!isOrganizerClickable}
-              className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)} flex items-center justify-center flex-shrink-0 shadow-sm ${
+              className={`h-12 w-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden ${
+                avatarUrl ? '' : `bg-gradient-to-br ${getOrganizerColor(bulletin.organizerType)}`
+              } ${
                 isOrganizerClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'
               }`}
             >
-              {getOrganizerIcon(bulletin.organizerType)}
+              {avatarUrl ? (
+                <img 
+                  src={avatarUrl} 
+                  alt={bulletin.organizerName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                getOrganizerIcon(bulletin.organizerType)
+              )}
             </button>
 
             <div className="flex-1 min-w-0">
@@ -423,6 +451,7 @@ export function BulletinCard({ bulletin, onUpdate, onRepostCreated }: BulletinCa
               contentType="bulletin"
               contentId={bulletin.id}
               initialCount={bulletin.comments}
+              avatarCache={avatarCache}
             />
           </div>
         )}

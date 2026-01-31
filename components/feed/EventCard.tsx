@@ -1,4 +1,4 @@
-// components/feed/EventCard.tsx - with onRepostCreated callback
+// components/feed/EventCard.tsx - Complete with avatar cache
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -15,6 +15,10 @@ interface EventCardProps {
   onPostCreated?: () => void
   onEventDeleted?: () => void
   onRepostCreated?: (repost: any) => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
 export function EventCard({ 
@@ -23,7 +27,8 @@ export function EventCard({
   onToggleHide, 
   onPostCreated,
   onEventDeleted,
-  onRepostCreated
+  onRepostCreated,
+  avatarCache
 }: EventCardProps) {
   const router = useRouter()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
@@ -40,6 +45,12 @@ export function EventCard({
     e.stopPropagation()
     if (isPostingExpired) return
     setIsCreatePostOpen(true)
+  }
+
+  const handlePostRefresh = () => {
+    if (onPostCreated) {
+      onPostCreated()
+    }
   }
 
   return (
@@ -144,9 +155,10 @@ export function EventCard({
                       key={post.id} 
                       post={post} 
                       eventId={event.id}
-                      onPostDeleted={onPostCreated}
-                      onPostUpdated={onPostCreated}
+                      onPostDeleted={handlePostRefresh}
+                      onPostUpdated={handlePostRefresh}
                       onRepostCreated={onRepostCreated}
+                      avatarCache={avatarCache}
                     />
                   ))}
                 </div>
@@ -184,7 +196,7 @@ export function EventCard({
         isOpen={isCreatePostOpen}
         onClose={() => setIsCreatePostOpen(false)}
         eventId={event.id}
-        onPostCreated={onPostCreated}
+        onPostCreated={handlePostRefresh}
       />
     </>
   )

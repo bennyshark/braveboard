@@ -2,7 +2,7 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation" // Import useRouter
+import { useRouter } from "next/navigation"
 import { 
   Reply, 
   Shield, 
@@ -44,6 +44,10 @@ interface CommentItemProps {
   onCommentCreated: () => void
   depth?: number
   isInsideModal?: boolean
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
 export function CommentItem({ 
@@ -53,9 +57,10 @@ export function CommentItem({
   eventId,
   onCommentCreated,
   depth = 0,
-  isInsideModal = false
+  isInsideModal = false,
+  avatarCache
 }: CommentItemProps) {
-  const router = useRouter() // Initialize router
+  const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showReplyBox, setShowReplyBox] = useState(false)
   const [reactionCount, setReactionCount] = useState(comment.reactionCount || 0)
@@ -64,6 +69,21 @@ export function CommentItem({
   const isDeleted = comment.isDeleted || comment.content === '[Comment deleted]'
   
   const isFirstLevelReply = depth === 1
+
+  // Get avatar from cache
+  const getCommentAvatar = () => {
+    if (isDeleted || !avatarCache) return comment.authorAvatar
+    
+    if (comment.postedAsType === 'faith_admin') {
+      return avatarCache.faithAdmin
+    } else if (comment.postedAsType === 'organization' && comment.postedAsOrgId) {
+      return avatarCache.organizations.get(comment.postedAsOrgId) || comment.authorAvatar
+    }
+    
+    return comment.authorAvatar
+  }
+
+  const avatarUrl = getCommentAvatar()
 
   const getIdentityIcon = (type: string) => {
     switch(type) {
@@ -113,7 +133,7 @@ export function CommentItem({
 
   // Handle navigation based on author type
   const handleAuthorClick = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent bubbling
+    e.stopPropagation()
     e.preventDefault()
 
     if (isDeleted) return
@@ -123,17 +143,14 @@ export function CommentItem({
         router.push('/faith-admin')
         break
       case 'organization':
-        // Ensure we have an Org ID to navigate to
         if (comment.postedAsOrgId) {
           router.push(`/organization/${comment.postedAsOrgId}`)
         } else {
-          // Fallback if ID is missing (though it shouldn't be)
           router.push('/organizations')
         }
         break
       case 'user':
       default:
-        // Redirect to user profile
         router.push(`/user/${comment.authorId}`)
         break
     }
@@ -211,9 +228,9 @@ export function CommentItem({
               <div className="h-7 w-7 rounded-lg bg-gray-300 flex items-center justify-center">
                 <Trash2 className="h-3 w-3 text-gray-500" />
               </div>
-            ) : comment.authorAvatar ? (
+            ) : avatarUrl ? (
               <img 
-                src={comment.authorAvatar}
+                src={avatarUrl}
                 alt={comment.authorName}
                 className="h-7 w-7 rounded-lg object-cover"
               />
@@ -369,6 +386,7 @@ export function CommentItem({
               onCommentCreated={onCommentCreated}
               depth={depth + 1}
               isInsideModal={isInsideModal}
+              avatarCache={avatarCache}
             />
           ))}
         </div>
