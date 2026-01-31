@@ -19,6 +19,7 @@ type PostingIdentity = {
   id?: string
   name: string
   icon: 'user' | 'org' | 'faith'
+  avatarUrl?: string | null
 }
 
 export function InlineCommentBox({
@@ -63,7 +64,7 @@ export function InlineCommentBox({
         // 1. Fetch User Profile
         const { data: profile } = await supabase
           .from('profiles')
-          .select('first_name, last_name, role')
+          .select('first_name, last_name, role, avatar_url')
           .eq('id', user.id)
           .single()
 
@@ -75,7 +76,8 @@ export function InlineCommentBox({
         identities.push({
           type: 'user',
           name: userName,
-          icon: 'user'
+          icon: 'user',
+          avatarUrl: profile?.avatar_url || null
         })
 
         // --- RESTRICTION: No Org/Faith posting on Free Wall or Reposts ---
@@ -91,25 +93,31 @@ export function InlineCommentBox({
         // 2. Check for Faith Admin
         const isFaithAdmin = profile?.role === 'admin'
         if (isFaithAdmin) {
+          // Fetch Faith Admin avatar
+          const { data: faithAdminData } = await supabase
+            .from('faith_admin_settings')
+            .select('avatar_url')
+            .single()
+
           identities.push({
             type: 'faith_admin',
             name: 'FAITH Admin',
-            icon: 'faith'
+            icon: 'faith',
+            avatarUrl: faithAdminData?.avatar_url || null
           })
         }
 
         // 3. Fetch Organizations (Officer/Admin roles)
-        // UPDATED: Removed !inner to use Left Join for safety, and added ordering
         const { data: userOrgs, error: orgsError } = await supabase
           .from('user_organizations')
           .select(`
             organization_id,
             role,
-            organization:organizations(id, name)
+            organization:organizations(id, name, avatar_url)
           `)
           .eq('user_id', user.id)
           .in('role', ['officer', 'admin'])
-          .order('joined_at', { ascending: false }) // Consistent ordering
+          .order('joined_at', { ascending: false })
 
         if (orgsError) {
           console.error("Error fetching organizations:", orgsError)
@@ -123,7 +131,8 @@ export function InlineCommentBox({
                 type: 'organization',
                 id: uo.organization.id,
                 name: uo.organization.name,
-                icon: 'org'
+                icon: 'org',
+                avatarUrl: uo.organization.avatar_url || null
               })
             }
           })
@@ -187,6 +196,26 @@ export function InlineCommentBox({
       case 'org': return <Users className="h-3.5 w-3.5 text-orange-600" />
       default: return <User className="h-3.5 w-3.5 text-blue-600" />
     }
+  }
+
+  const renderIdentityAvatar = (identity: PostingIdentity) => {
+    if (identity.avatarUrl) {
+      return (
+        <img 
+          src={identity.avatarUrl} 
+          alt={identity.name}
+          className="h-5 w-5 rounded-full object-cover"
+        />
+      )
+    }
+    return (
+      <div className={`p-1 rounded-full flex-shrink-0 ${
+        identity.icon === 'faith' ? 'bg-purple-100' : 
+        identity.icon === 'org' ? 'bg-orange-100' : 'bg-blue-100'
+      }`}>
+        {getIdentityIcon(identity.icon)}
+      </div>
+    )
   }
 
   const handleSubmit = async () => {
@@ -257,7 +286,7 @@ export function InlineCommentBox({
             >
               <span className="text-gray-500 font-medium whitespace-nowrap">Commenting as</span>
               <div className="flex items-center gap-1.5 min-w-0">
-                {selectedIdentity && getIdentityIcon(selectedIdentity.icon)}
+                {selectedIdentity && renderIdentityAvatar(selectedIdentity)}
                 <span className="truncate">{selectedIdentity?.name}</span>
               </div>
               <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${showIdentityDropdown ? 'rotate-180' : ''}`} />
@@ -274,12 +303,7 @@ export function InlineCommentBox({
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left"
                   >
-                    <div className={`p-1.5 rounded-md flex-shrink-0 ${
-                      identity.icon === 'faith' ? 'bg-purple-100' : 
-                      identity.icon === 'org' ? 'bg-orange-100' : 'bg-blue-100'
-                    }`}>
-                      {getIdentityIcon(identity.icon)}
-                    </div>
+                    {renderIdentityAvatar(identity)}
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-gray-900 text-sm truncate">{identity.name}</div>
                       <div className="text-[10px] text-gray-500 capitalize">{identity.type.replace('_', ' ')}</div>
