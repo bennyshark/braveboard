@@ -1,15 +1,16 @@
 // components/posts/CreateFreeWallPostDialog.tsx
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react" // Added useEffect to imports
 import { X, Image, Loader2, Send, Sparkles } from "lucide-react"
 import { createBrowserClient } from "@supabase/ssr"
 import { TagUserSelector } from "@/components/tags/TagUserSelector"
 
+// 1. UPDATE INTERFACE
 interface CreateFreeWallPostDialogProps {
   isOpen: boolean
   onClose: () => void
-  onPostCreated?: () => void
+  onPostCreated?: (postData: any) => void // Updated to accept data
 }
 
 const MAX_IMAGES = 10
@@ -28,13 +29,13 @@ export function CreateFreeWallPostDialog({ isOpen, onClose, onPostCreated }: Cre
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
   )
 
-  useState(() => {
+  useEffect(() => {
     const loadUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
     }
     loadUser()
-  })
+  }, []) 
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -91,11 +92,12 @@ export function CreateFreeWallPostDialog({ isOpen, onClose, onPostCreated }: Cre
       }
 
       // Create post
+      // 2. UPDATE SELECT: We need '*' not just 'id' so the parent can display the post immediately
       const { data: postData, error } = await supabase.from('free_wall_posts').insert({
         author_id: user.id,
         content: content.trim(),
         image_urls: imageUrls
-      }).select('id').single()
+      }).select('*').single() 
 
       if (error) throw error
 
@@ -121,7 +123,8 @@ export function CreateFreeWallPostDialog({ isOpen, onClose, onPostCreated }: Cre
       setImagePreviews([])
       setTaggedUsers([])
       
-      if (onPostCreated) onPostCreated()
+      // 3. PASS DATA BACK TO PARENT
+      if (onPostCreated) onPostCreated(postData)
       onClose()
       
     } catch (error: any) {
@@ -143,7 +146,7 @@ export function CreateFreeWallPostDialog({ isOpen, onClose, onPostCreated }: Cre
         
         {/* Header */}
         <div className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 opacity-10"></div>
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 opacity-10"></div>
           <div className="relative flex items-center justify-between p-6 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">

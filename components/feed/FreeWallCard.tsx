@@ -1,4 +1,4 @@
-// components/feed/FreeWallCard.tsx - Complete
+// components/feed/FreeWallCard.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { MessageCircle, Clock, Image, ChevronDown, ChevronUp } from "lucide-react"
 import { FreeWallOptionsMenu } from "@/components/menus/FreeWallOptionsMenu"
 import { ImagePreviewModal } from "./ImagePreviewModal"
+import { SingleImageDisplay } from "./SingleImageDisplay"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
@@ -29,10 +30,11 @@ type FreeWallPost = {
 
 interface FreeWallCardProps {
   post: FreeWallPost
-  onUpdate?: () => void
+  onDelete?: (postId: string) => void
+  onRepostCreated?: (repost: any) => void
 }
 
-export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
+export function FreeWallCard({ post, onDelete, onRepostCreated }: FreeWallCardProps) {
   const router = useRouter()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
@@ -91,6 +93,132 @@ export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
   const handleImageClick = (index: number) => {
     setPreviewIndex(index)
     setPreviewOpen(true)
+  }
+
+  // Optimized multi-image layout renderer (grids only for 2-4 images)
+  const renderMultipleImages = () => {
+    const count = post.imageUrls.length
+
+    if (count === 2) {
+      // 2 images: Side by side, larger display
+      return (
+        <div className="grid grid-cols-2 gap-1 mb-3 -mx-1">
+          {post.imageUrls.map((url, idx) => (
+            <div 
+              key={idx} 
+              className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+              style={{ aspectRatio: '4/3' }}
+              onClick={() => handleImageClick(idx)}
+            >
+              <img 
+                src={url} 
+                alt={`Image ${idx + 1}`} 
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (count === 3) {
+      // 3 images: 1 on top (larger), 2 on bottom (equal size)
+      return (
+        <div className="mb-3 -mx-1">
+          {/* Top: Single large image */}
+          <div 
+            className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group mb-1"
+            style={{ aspectRatio: '16/9' }}
+            onClick={() => handleImageClick(0)}
+          >
+            <img 
+              src={post.imageUrls[0]} 
+              alt="Image 1" 
+              className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+          </div>
+
+          {/* Bottom: 2 equal images */}
+          <div className="grid grid-cols-2 gap-1">
+            {post.imageUrls.slice(1, 3).map((url, idx) => (
+              <div 
+                key={idx + 1} 
+                className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+                style={{ aspectRatio: '4/3' }}
+                onClick={() => handleImageClick(idx + 1)}
+              >
+                <img 
+                  src={url} 
+                  alt={`Image ${idx + 2}`} 
+                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    if (count === 4) {
+      // 4 images: 2x2 grid
+      return (
+        <div className="grid grid-cols-2 gap-1 mb-3 -mx-1">
+          {post.imageUrls.map((url, idx) => (
+            <div 
+              key={idx} 
+              className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+              style={{ aspectRatio: '1/1' }}
+              onClick={() => handleImageClick(idx)}
+            >
+              <img 
+                src={url} 
+                alt={`Image ${idx + 1}`} 
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    // 5+ images: Show first 4 in 2x2 grid with "+N more" overlay on last image
+    const remaining = count - 4
+    return (
+      <div className="grid grid-cols-2 gap-1 mb-3 -mx-1">
+        {post.imageUrls.slice(0, 4).map((url, idx) => {
+          const isLast = idx === 3
+          
+          return (
+            <div 
+              key={idx} 
+              className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+              style={{ aspectRatio: '1/1' }}
+              onClick={() => handleImageClick(idx)}
+            >
+              <img 
+                src={url} 
+                alt={`Image ${idx + 1}`} 
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              />
+              
+              {!isLast && (
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+              )}
+              
+              {isLast && remaining > 0 && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <span className="text-white text-4xl font-bold drop-shadow-lg">+{remaining}</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
@@ -159,9 +287,7 @@ export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
                   postId={post.id}
                   authorId={post.authorId}
                   content={post.content}
-                  onUpdate={() => {
-                    if (onUpdate) onUpdate()
-                  }}
+                  onDelete={onDelete}
                 />
               </div>
             </div>
@@ -172,36 +298,16 @@ export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
             {post.content}
           </p>
 
-          {/* Images Grid */}
-          {post.imageUrls.length > 0 && (
-            <div className={`mb-4 ${
-              post.imageUrls.length === 1 ? 'grid grid-cols-1' :
-              post.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
-              'grid grid-cols-2 gap-2'
-            }`}>
-              {post.imageUrls.slice(0, 4).map((url, idx) => (
-                <div 
-                  key={idx} 
-                  className={`relative overflow-hidden rounded-xl bg-gray-100 cursor-pointer group ${
-                    post.imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
-                  }`}
-                  onClick={() => handleImageClick(idx)}
-                >
-                  <img 
-                    src={url} 
-                    alt="Post" 
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                  {idx === 3 && post.imageUrls.length > 4 && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                      <span className="text-white text-2xl font-bold">+{post.imageUrls.length - 4}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Images - Optimized layouts */}
+          {post.imageUrls.length === 1 ? (
+            <SingleImageDisplay
+              imageUrl={post.imageUrls[0]}
+              onImageClick={() => handleImageClick(0)}
+              alt="Post image"
+            />
+          ) : post.imageUrls.length > 0 ? (
+            renderMultipleImages()
+          ) : null}
 
           {/* Actions */}
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
@@ -233,6 +339,7 @@ export function FreeWallCard({ post, onUpdate }: FreeWallCardProps) {
                 contentType="free_wall_post"
                 contentId={post.id}
                 onRepostChange={handleReactionChange}
+                onRepostCreated={onRepostCreated}
               />
             </div>
 

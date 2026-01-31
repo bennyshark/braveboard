@@ -1,4 +1,4 @@
-// components/comments/CommentSection.tsx - FULLY OPTIMIZED WITH CACHE
+// components/comments/CommentSection.tsx 
 "use client"
 import { useState, useEffect, useMemo } from "react"
 import { MessageCircle, Loader2, Eye } from "lucide-react"
@@ -13,6 +13,10 @@ interface CommentSectionProps {
   contentId: string
   eventId?: string
   initialCount?: number
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
 type Comment = {
@@ -35,7 +39,13 @@ type Comment = {
   mostRecentReplyTimestamp?: number
 }
 
-export function CommentSection({ contentType, contentId, eventId, initialCount = 0 }: CommentSectionProps) {
+export function CommentSection({ 
+  contentType, 
+  contentId, 
+  eventId, 
+  initialCount = 0,
+  avatarCache 
+}: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -82,7 +92,6 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
       if (!commentsData || commentsData.length === 0) {
         const emptyResult: Comment[] = []
         setComments(emptyResult)
-        // Cache empty result too
         commentCache.set(contentType, contentId, emptyResult, 0)
         setLoading(false)
         setRefreshing(false)
@@ -102,22 +111,13 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         }
       })
 
-      // Step 3: Fetch ONLY needed profiles and orgs (in parallel)
-      const [authorsResult, orgsResult] = await Promise.all([
-        authorIds.size > 0
-          ? supabase
-              .from('profiles')
-              .select('id, first_name, last_name, avatar_url')
-              .in('id', Array.from(authorIds))
-          : Promise.resolve({ data: [] }),
-        
-        orgIds.size > 0
-          ? supabase
-              .from('organizations')
-              .select('id, name, avatar_url')
-              .in('id', Array.from(orgIds))
-          : Promise.resolve({ data: [] })
-      ])
+      // Step 3: Fetch ONLY needed profiles (orgs already cached)
+      const authorsResult = authorIds.size > 0
+        ? await supabase
+            .from('profiles')
+            .select('id, first_name, last_name, avatar_url')
+            .in('id', Array.from(authorIds))
+        : { data: [] }
 
       // Step 4: Build lookup maps
       const authorMap = new Map(
@@ -127,13 +127,6 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
             name: `${author.first_name || 'Unknown'} ${author.last_name || 'User'}`,
             avatarUrl: author.avatar_url
           }
-        ])
-      )
-
-      const orgMap = new Map(
-        (orgsResult.data || []).map(org => [
-          org.id,
-          { name: org.name, avatarUrl: org.avatar_url }
         ])
       )
 
@@ -151,10 +144,15 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
         if (!isDeleted) {
           if (c.posted_as_type === 'faith_admin') {
             displayName = 'FAITH Administration'
+            // Use cached avatar
+            displayAvatar = avatarCache?.faithAdmin || null
           } else if (c.posted_as_type === 'organization' && c.posted_as_org_id) {
-            const orgData = orgMap.get(c.posted_as_org_id)
-            displayName = orgData?.name || 'Organization'
-            displayAvatar = orgData?.avatarUrl || null
+            // Use cached avatar
+            displayAvatar = avatarCache?.organizations.get(c.posted_as_org_id) || null
+            
+            // We need to get the org name - could be from a separate map if needed
+            // For now, we'll fetch it (can be optimized further)
+            displayName = 'Organization' // Default, will be updated if we have org data
           } else {
             const authorData = authorMap.get(c.author_id)
             displayName = authorData?.name || 'Unknown User'
@@ -194,6 +192,29 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
           topLevelComments.push(comment)
         }
       })
+
+      // Fetch org names if needed (could be optimized with a cache)
+      if (orgIds.size > 0) {
+        const { data: orgsData } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .in('id', Array.from(orgIds))
+
+        const orgNameMap = new Map(
+          orgsData?.map(org => [org.id, org.name]) || []
+        )
+
+        // Update comment names with org names
+        commentMap.forEach(comment => {
+          if (comment.postedAsType === 'organization' && comment.postedAsOrgId) {
+            const orgName = orgNameMap.get(comment.postedAsOrgId)
+            if (orgName) {
+              comment.authorName = orgName
+              commentNameMap.set(comment.id, orgName)
+            }
+          }
+        })
+      }
 
       // Build tree structure
       commentMap.forEach(comment => {
@@ -248,12 +269,11 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
   }
 
   useEffect(() => {
-    loadComments(false, false) // Don't force refetch on mount, use cache if available
+    loadComments(false, false)
   }, [contentType, contentId])
 
   const handleCommentCreated = () => {
     setShowCommentBox(false)
-    // Invalidate cache and force refetch
     commentCache.invalidate(contentType, contentId)
     loadComments(true, true)
   }
@@ -353,6 +373,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
                     loadComments(true, true)
                   }}
                   isInsideModal={false}
+                  avatarCache={avatarCache}
                 />
               </div>
             ))}
@@ -382,6 +403,7 @@ export function CommentSection({ contentType, contentId, eventId, initialCount =
           commentCache.invalidate(contentType, contentId)
           loadComments(true, true)
         }}
+        avatarCache={avatarCache}
       />
     </>
   )

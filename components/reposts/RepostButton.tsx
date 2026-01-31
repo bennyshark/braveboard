@@ -9,9 +9,10 @@ interface RepostButtonProps {
   contentType: 'post' | 'bulletin' | 'announcement' | 'free_wall_post' | 'repost'
   contentId: string
   onRepostChange?: () => void
+  onRepostCreated?: (repost: any) => void
 }
 
-export function RepostButton({ contentType, contentId, onRepostChange }: RepostButtonProps) {
+export function RepostButton({ contentType, contentId, onRepostChange, onRepostCreated }: RepostButtonProps) {
   const [showDialog, setShowDialog] = useState(false)
   const [comment, setComment] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -25,13 +26,220 @@ export function RepostButton({ contentType, contentId, onRepostChange }: RepostB
     setShowDialog(true)
   }
 
+  const fetchOriginalContent = async (repost: any): Promise<any | null> => {
+    try {
+      // FREE WALL POST
+      if (repost.content_type === 'free_wall_post') {
+        const { data } = await supabase
+          .from('free_wall_posts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        const { data: authorData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .eq('id', data.author_id)
+          .maybeSingle()
+
+        return {
+          type: 'free_wall_post',
+          id: data.id,
+          content: data.content,
+          authorId: authorData?.id,
+          authorName: authorData ? `${authorData.first_name} ${authorData.last_name}` : 'Unknown User',
+          authorAvatar: authorData?.avatar_url || null,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+      
+      // BULLETIN
+      else if (repost.content_type === 'bulletin') {
+        const { data } = await supabase
+          .from('bulletins')
+          .select('*, creator_org:organizations(name, avatar_url)')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let creatorName = "Unknown"
+        let creatorType = "user"
+        let creatorAvatar = null
+
+        if (data.creator_type === 'faith_admin') {
+          creatorName = "FAITH Administration"
+          creatorType = "faith"
+        } else if (data.creator_type === 'organization' && data.creator_org) {
+          creatorName = data.creator_org.name
+          creatorAvatar = data.creator_org.avatar_url
+          creatorType = "organization"
+        }
+
+        return {
+          type: 'bulletin',
+          id: data.id,
+          header: data.header,
+          body: data.body,
+          creatorName,
+          creatorType,
+          creatorAvatar,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+      
+      // ANNOUNCEMENT
+      else if (repost.content_type === 'announcement') {
+        const { data } = await supabase
+          .from('announcements')
+          .select('*, creator_org:organizations(name, avatar_url)')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let creatorName = "Unknown"
+        let creatorType = "user"
+        let creatorAvatar = null
+
+        if (data.creator_type === 'faith_admin') {
+          creatorName = "FAITH Administration"
+          creatorType = "faith"
+        } else if (data.creator_type === 'organization' && data.creator_org) {
+          creatorName = data.creator_org.name
+          creatorAvatar = data.creator_org.avatar_url
+          creatorType = "organization"
+        }
+
+        return {
+          type: 'announcement',
+          id: data.id,
+          header: data.header,
+          body: data.body,
+          creatorName,
+          creatorType,
+          creatorAvatar,
+          imageUrl: data.image_url,
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+      
+      // POST (Event posts)
+      else if (repost.content_type === 'post') {
+        const { data } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!data) return null
+
+        let displayName = 'Unknown User'
+        let displayAvatar = null
+        let displayType = 'user'
+
+        if (data.posted_as_type === 'faith_admin') {
+          displayName = 'FAITH Administration'
+          displayType = 'faith_admin'
+        } else if (data.posted_as_type === 'organization' && data.posted_as_org_id) {
+          const { data: orgData } = await supabase
+            .from('organizations')
+            .select('name, avatar_url')
+            .eq('id', data.posted_as_org_id)
+            .single()
+          
+          if (orgData) {
+            displayName = orgData.name
+            displayAvatar = orgData.avatar_url
+            displayType = 'organization'
+          }
+        } else {
+          const { data: authorData } = await supabase
+            .from('profiles')
+            .select('id, first_name, last_name, avatar_url')
+            .eq('id', data.author_id)
+            .maybeSingle()
+
+          if (authorData) {
+            displayName = `${authorData.first_name} ${authorData.last_name}`
+            displayAvatar = authorData.avatar_url
+          }
+        }
+
+        return {
+          type: 'post',
+          id: data.id,
+          content: data.content,
+          authorId: data.author_id,
+          authorName: displayName,
+          authorAvatar: displayAvatar,
+          authorType: displayType,
+          imageUrls: data.image_urls || [],
+          createdAt: new Date(data.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+      
+      // REPOST (nested repost) - FIXED: Field order matches OriginalContent type
+      else if (repost.content_type === 'repost') {
+        const { data: nestedRepost } = await supabase
+          .from('reposts')
+          .select('*')
+          .eq('id', repost.content_id)
+          .maybeSingle()
+
+        if (!nestedRepost) return null
+
+        const { data: reposterData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url')
+          .eq('id', nestedRepost.user_id)
+          .maybeSingle()
+
+        // Recursively fetch the original content of the nested repost
+        const nestedOriginalContent = await fetchOriginalContent(nestedRepost)
+
+        return {
+          type: 'repost',
+          id: nestedRepost.id,
+          comment: nestedRepost.repost_comment,
+          reposterId: reposterData?.id,
+          reposterName: reposterData ? `${reposterData.first_name} ${reposterData.last_name}` : 'Unknown User',
+          reposterAvatar: reposterData?.avatar_url || null,
+          contentType: nestedRepost.content_type,
+          contentId: nestedRepost.content_id,
+          originalContent: nestedOriginalContent,
+          createdAt: new Date(nestedRepost.created_at).toLocaleString('en-US', { 
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+      }
+      
+      return null
+    } catch (error) {
+      console.error('Error fetching original content:', error)
+      return null
+    }
+  }
+
   const confirmRepost = async () => {
     setIsLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      const { error } = await supabase
+      const { data: newRepost, error } = await supabase
         .from('reposts')
         .insert({
           user_id: user.id,
@@ -39,12 +247,58 @@ export function RepostButton({ contentType, contentId, onRepostChange }: RepostB
           content_id: contentId,
           repost_comment: comment.trim() || null
         })
+        .select()
+        .single()
 
       if (error) throw error
+
+      // Fetch user profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar_url')
+        .eq('id', user.id)
+        .single()
+
+      // Fetch tag count
+      const { data: tagCounts } = await supabase
+        .from('tags')
+        .select('content_id')
+        .eq('content_type', 'repost')
+        .eq('content_id', newRepost.id)
+
+      const tagCount = tagCounts?.length || 0
+
+      // Fetch original content
+      const originalContent = await fetchOriginalContent(newRepost)
+
+      // Build complete repost object
+      const completeRepost = {
+        id: newRepost.id,
+        userId: user.id,
+        userName: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown User',
+        userAvatar: profile?.avatar_url || null,
+        contentType: newRepost.content_type,
+        contentId: newRepost.content_id,
+        repostComment: newRepost.repost_comment,
+        createdAt: new Date(newRepost.created_at).toLocaleString('en-US', { 
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+        }),
+        createdAtRaw: newRepost.created_at,
+        originalContent,
+        taggedUsersCount: tagCount,
+        reactionCount: 0,
+        comments: 0,
+        repostCount: 0
+      }
 
       setShowDialog(false)
       setComment("")
       
+      // Call the new callback with complete data
+      if (onRepostCreated) {
+        onRepostCreated(completeRepost)
+      }
+
       if (onRepostChange) {
         setTimeout(() => onRepostChange(), 100)
       }

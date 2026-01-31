@@ -322,7 +322,6 @@ export default function ImportProfiles() {
         )}
       </div>
 
-      {/* CSV Format Guide - Fixed HTML structure */}
       <div className="mt-8 bg-gray-50 rounded-lg p-6">
         <h3 className="font-medium text-gray-900 mb-3">CSV Format Guide</h3>
         
@@ -398,7 +397,6 @@ export default function ImportProfiles() {
           </table>
         </div>
         
-        {/* Fixed HTML structure - removed <ul> inside <p> */}
         <div className="p-3 bg-blue-50 border border-blue-200 rounded">
           <div className="text-sm text-blue-800">
             <p className="font-medium mb-1">Note:</p>

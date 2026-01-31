@@ -1,4 +1,4 @@
-// components/feed/EventCard.tsx - OPTIMIZED with pre-fetched data
+// components/feed/EventCard.tsx - Complete with avatar cache
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -14,6 +14,11 @@ interface EventCardProps {
   onToggleHide: (e: React.MouseEvent) => void
   onPostCreated?: () => void
   onEventDeleted?: () => void
+  onRepostCreated?: (repost: any) => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
 export function EventCard({ 
@@ -21,12 +26,13 @@ export function EventCard({
   isPostsHidden, 
   onToggleHide, 
   onPostCreated,
-  onEventDeleted
+  onEventDeleted,
+  onRepostCreated,
+  avatarCache
 }: EventCardProps) {
   const router = useRouter()
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
   
-  // OPTIMIZED: Use pre-fetched data from props
   const isPostingExpired = event.isPostingExpired ?? false
   const eventOfText = event.eventOfText ?? "Custom Group"
   const visiblePosts = isPostsHidden ? [] : event.posts.slice(0, 3)
@@ -39,6 +45,12 @@ export function EventCard({
     e.stopPropagation()
     if (isPostingExpired) return
     setIsCreatePostOpen(true)
+  }
+
+  const handlePostRefresh = () => {
+    if (onPostCreated) {
+      onPostCreated()
+    }
   }
 
   return (
@@ -74,7 +86,6 @@ export function EventCard({
                     {event.organizer.name}
                   </span>
 
-                  {/* OPTIMIZED: Instantly show status without loading */}
                   {isPostingExpired && (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-100">
                       Ended
@@ -88,7 +99,6 @@ export function EventCard({
                     {event.date}
                   </span>
                   <span className="text-gray-300">•</span>
-                  {/* OPTIMIZED: Instantly show participant text without loading */}
                   <span className="flex items-center gap-2 font-medium">
                     <Users className="h-4 w-4 text-gray-400" />
                     Event for: {eventOfText}
@@ -103,7 +113,6 @@ export function EventCard({
               />
             </div>
             
-            {/* View Full Event + Hide/Show Posts buttons */}
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
               <button className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 group/btn">
                 View Full Event
@@ -146,8 +155,10 @@ export function EventCard({
                       key={post.id} 
                       post={post} 
                       eventId={event.id}
-                      onPostDeleted={onPostCreated}
-                      onPostUpdated={onPostCreated}
+                      onPostDeleted={handlePostRefresh}
+                      onPostUpdated={handlePostRefresh}
+                      onRepostCreated={onRepostCreated}
+                      avatarCache={avatarCache}
                     />
                   ))}
                 </div>
@@ -159,7 +170,6 @@ export function EventCard({
                 </div>
               )}
 
-              {/* OPTIMIZED: Instant button state without loading */}
               {isPostingExpired ? (
                 <button 
                   disabled 
@@ -186,7 +196,7 @@ export function EventCard({
         isOpen={isCreatePostOpen}
         onClose={() => setIsCreatePostOpen(false)}
         eventId={event.id}
-        onPostCreated={onPostCreated}
+        onPostCreated={handlePostRefresh}
       />
     </>
   )

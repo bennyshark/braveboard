@@ -893,8 +893,7 @@ function OrganizationSettingsContent() {
             )}
           </div>
         </div>
-
-        {/* Content Area - Fixed Overlap */}
+        
         <div className="px-8 pb-8 relative z-10">
           
           {/* Avatar and Info Row */}

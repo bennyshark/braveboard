@@ -1,4 +1,4 @@
-// components/menus/RepostOptionsMenu.tsx
+// components/menus/RepostOptionsMenu.tsx - OPTIMIZED: Immediate UI update on delete
 "use client"
 import { useState, useRef, useEffect } from "react"
 import { MoreVertical, Edit2, Trash2 } from "lucide-react"
@@ -9,14 +9,14 @@ interface RepostOptionsMenuProps {
   repostId: string
   userId: string
   comment: string
-  onUpdate: () => void
+  onDelete?: (repostId: string) => void
 }
 
 export function RepostOptionsMenu({ 
   repostId, 
   userId, 
   comment,
-  onUpdate
+  onDelete
 }: RepostOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -37,9 +37,17 @@ export function RepostOptionsMenu({
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // User can edit/delete their own reposts
-        setCanEdit(user.id === userId)
-        setCanDelete(user.id === userId)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        const isAdmin = profile?.role === 'admin'
+        const isOwner = user.id === userId
+
+        setCanEdit(isOwner)
+        setCanDelete(isOwner || isAdmin)
 
       } catch (error) {
         console.error('Error checking permissions:', error)
@@ -68,8 +76,13 @@ export function RepostOptionsMenu({
       const { error } = await supabase.from('reposts').delete().eq('id', repostId)
       if (error) throw error
       
+      console.log('Repost deleted successfully, triggering immediate UI update...')
       setShowMenu(false)
-      onUpdate()
+      
+      // OPTIMIZED: Immediately call onDelete to remove from state
+      if (onDelete) {
+        onDelete(repostId)
+      }
     } catch (error: any) {
       console.error('Error deleting repost:', error)
       alert(`Failed to delete: ${error.message}`)
@@ -116,7 +129,12 @@ export function RepostOptionsMenu({
                 handleDelete()
               }}
               disabled={deleting}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-left text-sm font-medium text-red-600 hover:text-red-700 transition-colors border-t border-gray-100 disabled:opacity-50"
+              className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-medium transition-colors border-t border-gray-100 disabled:opacity-50
+                ${canEdit 
+                  ? 'hover:bg-red-50 text-red-600 hover:text-red-700'
+                  : 'bg-red-50 text-red-700 hover:bg-red-100'
+                }
+              `}
             >
               <Trash2 className="h-4 w-4" />
               {deleting ? 'Deleting...' : 'Delete Repost'}
@@ -130,7 +148,10 @@ export function RepostOptionsMenu({
           repostId={repostId}
           initialComment={comment}
           onClose={() => setShowEditDialog(false)}
-          onUpdate={onUpdate}
+          onUpdate={() => {
+            // Editing doesn't need full reload, just close dialog
+            setShowEditDialog(false)
+          }}
         />
       )}
     </div>

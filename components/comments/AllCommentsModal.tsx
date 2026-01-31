@@ -1,7 +1,10 @@
 // components/comments/AllCommentsModal.tsx
 "use client"
+
 import { X } from "lucide-react"
 import { CommentItem } from "./CommentItem"
+import { InlineCommentBox } from "./InlineCommentBox"
+import { useState, useMemo } from "react"
 
 type Comment = {
   id: string
@@ -32,63 +35,95 @@ interface AllCommentsModalProps {
   contentId: string
   eventId?: string
   onCommentCreated: () => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
-export function AllCommentsModal({
-  isOpen,
-  onClose,
-  comments,
+export function AllCommentsModal({ 
+  isOpen, 
+  onClose, 
+  comments, 
   totalCount,
   contentType,
   contentId,
   eventId,
-  onCommentCreated
+  onCommentCreated,
+  avatarCache
 }: AllCommentsModalProps) {
+  const [showCommentBox, setShowCommentBox] = useState(false)
+  
+  const sortedComments = useMemo(() => {
+    return [...comments].sort((a, b) => {
+      const aTime = a.mostRecentReplyTimestamp || a.createdAtTimestamp
+      const bTime = b.mostRecentReplyTimestamp || b.createdAtTimestamp
+      return bTime - aTime
+    })
+  }, [comments])
+
+  const handleCommentCreated = () => {
+    setShowCommentBox(false)
+    onCommentCreated()
+  }
+
   if (!isOpen) return null
 
-  // Sort comments by most recent activity
-  const sortedComments = [...comments].sort((a, b) => {
-    const aTime = a.mostRecentReplyTimestamp || a.createdAtTimestamp
-    const bTime = b.mostRecentReplyTimestamp || b.createdAtTimestamp
-    return bTime - aTime
-  })
-
   return (
-    <div 
-      className="all-comments-modal fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div 
-        className="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 all-comments-modal">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
-          <div>
-            <h3 className="text-2xl font-black text-gray-900">All Comments</h3>
-            <p className="text-sm text-gray-600 mt-1">{totalCount} total comments</p>
-          </div>
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-2xl font-bold text-gray-900">
+            All Comments ({totalCount})
+          </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/80 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <X className="h-6 w-6 text-gray-500" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Comments List */}
-        <div className="overflow-y-auto max-h-[calc(85vh-120px)] p-6 space-y-4">
-          {sortedComments.map(comment => (
-            <div key={comment.id} className="animate-in fade-in duration-300">
-              <CommentItem 
-                comment={comment}
+        {/* Comment Box */}
+        <div className="px-6 py-4 border-b border-gray-200">
+          <button
+            onClick={() => setShowCommentBox(!showCommentBox)}
+            className={`text-sm font-bold px-4 py-2 rounded-lg transition-colors ${
+              showCommentBox
+                ? 'bg-blue-100 text-blue-700'
+                : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+            }`}
+          >
+            {showCommentBox ? 'Cancel' : 'Add Comment'}
+          </button>
+
+          {showCommentBox && (
+            <div className="mt-4 animate-in slide-in-from-top-2 duration-200">
+              <InlineCommentBox
                 contentType={contentType}
                 contentId={contentId}
                 eventId={eventId}
-                onCommentCreated={onCommentCreated}
-                isInsideModal={true}
+                onCancel={() => setShowCommentBox(false)}
+                onCommentCreated={handleCommentCreated}
               />
             </div>
+          )}
+        </div>
+
+        {/* Comments List */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {sortedComments.map(comment => (
+            <CommentItem 
+              key={comment.id}
+              comment={comment}
+              contentType={contentType}
+              contentId={contentId}
+              eventId={eventId}
+              onCommentCreated={onCommentCreated}
+              isInsideModal={true}
+              avatarCache={avatarCache}
+            />
           ))}
         </div>
       </div>

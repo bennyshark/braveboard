@@ -5,6 +5,7 @@ export type Organization = {
   name: string
   role: string
   members?: number
+  avatar_url?: string | null
 }
 
 export type Organizer = {

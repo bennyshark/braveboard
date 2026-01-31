@@ -1,4 +1,4 @@
-// components/feed/PostCard.tsx - OPTIMIZED with tag count support
+// components/feed/PostCard.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -7,6 +7,7 @@ import { MessageCircle, Share2, Clock, Image, Shield, Users, ChevronDown, Chevro
 import { PostOptionsMenu } from "@/components/menus/PostOptionsMenu"
 import { Post } from "@/app/(site)/home/types"
 import { ImagePreviewModal } from "./ImagePreviewModal"
+import { SingleImageDisplay } from "./SingleImageDisplay"
 import { CommentSection } from "@/components/comments/CommentSection"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
@@ -19,22 +20,34 @@ interface PostCardProps {
   eventId?: string
   onPostDeleted?: () => void
   onPostUpdated?: () => void
+  onRepostCreated?: (repost: any) => void
+  avatarCache?: {
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }
 }
 
 type PostIdentity = {
   type: 'user' | 'organization' | 'faith_admin'
   name: string
   avatarUrl: string | null
+  id: string | null
 }
 
-export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCardProps) {
+export function PostCard({ 
+  post, 
+  eventId, 
+  onPostDeleted, 
+  onPostUpdated, 
+  onRepostCreated,
+  avatarCache 
+}: PostCardProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [showComments, setShowComments] = useState(false)
   
-  // OPTIMIZED: Use prop data if available
   const [commentCount, setCommentCount] = useState(post.comments)
   const [reactionCount, setReactionCount] = useState(post.reactionCount || 0)
   const [repostCount, setRepostCount] = useState(post.repostCount || 0)
@@ -44,25 +57,28 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [canEditTags, setCanEditTags] = useState(false)
   
-  // OPTIMIZED: Initialize with prop data
   const [displayIdentity, setDisplayIdentity] = useState<PostIdentity>(() => {
     if (post.postedAsType === 'faith_admin') {
       return {
         type: 'faith_admin',
         name: 'FAITH Administration',
-        avatarUrl: null
+        avatarUrl: avatarCache?.faithAdmin || null,
+        id: null
       }
     } else if (post.postedAsType === 'organization') {
+      const orgAvatar = avatarCache?.organizations.get((post as any).postedAsOrgId) || post.avatarUrl || null
       return {
         type: 'organization',
         name: post.author,
-        avatarUrl: post.avatarUrl
+        avatarUrl: orgAvatar,
+        id: (post as any).postedAsOrgId || null
       }
     }
     return {
       type: 'user',
       name: post.author,
-      avatarUrl: post.avatarUrl
+      avatarUrl: post.avatarUrl,
+      id: post.authorId
     }
   })
   
@@ -104,35 +120,47 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
       setEditedAt(postData.edited_at)
       setPinOrder(postData.pin_order)
 
-      if (!post.postedAsType) {
-        if (postData.posted_as_type === 'user') {
-          setDisplayIdentity({
-            type: 'user',
-            name: post.author,
-            avatarUrl: post.avatarUrl
-          })
-        }
-        else if (postData.posted_as_type === 'faith_admin') {
-          setDisplayIdentity({
-            type: 'faith_admin',
-            name: 'FAITH Administration',
-            avatarUrl: null
-          })
-        }
-        else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
-          const { data: orgData } = await supabase
-            .from('organizations')
-            .select('name, avatar_url')
-            .eq('id', postData.posted_as_org_id)
-            .single()
+      // Handle identity based on posted_as_type with cached avatars
+      if (postData.posted_as_type === 'user') {
+        setDisplayIdentity({
+          type: 'user',
+          name: post.author,
+          avatarUrl: post.avatarUrl,
+          id: postData.author_id
+        })
+      }
+      else if (postData.posted_as_type === 'faith_admin') {
+        setDisplayIdentity({
+          type: 'faith_admin',
+          name: 'FAITH Administration',
+          avatarUrl: avatarCache?.faithAdmin || null,
+          id: null
+        })
+      }
+      else if (postData.posted_as_type === 'organization' && postData.posted_as_org_id) {
+        // Use cached avatar instead of fetching
+        const orgAvatar = avatarCache?.organizations.get(postData.posted_as_org_id) || null
+        
+        // Only fetch name, not avatar
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', postData.posted_as_org_id)
+          .single()
 
-          if (orgData) {
-            setDisplayIdentity({
-              type: 'organization',
-              name: orgData.name,
-              avatarUrl: orgData.avatar_url || null
-            })
-          }
+        if (orgData) {
+          setDisplayIdentity({
+            type: 'organization',
+            name: orgData.name,
+            avatarUrl: orgAvatar,
+            id: postData.posted_as_org_id
+          })
+        } else {
+          setDisplayIdentity(prev => ({
+            ...prev,
+            avatarUrl: orgAvatar,
+            id: postData.posted_as_org_id
+          }))
         }
       }
     } catch (error) {
@@ -143,7 +171,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
   }
 
   useEffect(() => {
-    const needsFetch = !post.postedAsType || !eventId
+    const needsFetch = !post.postedAsType || !eventId || 
+                       (post.postedAsType === 'organization' && !displayIdentity.id)
     
     if (needsFetch) {
       setLoading(true)
@@ -166,8 +195,27 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     setRefreshTrigger(prev => prev + 1)
   }
 
-  const handleUserClick = (userId: string) => {
-    router.push(`/user/${userId}`)
+  // Handle author/organizer click navigation
+  const handleAuthorClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+
+    switch (displayIdentity.type) {
+      case 'faith_admin':
+        router.push('/faith-admin')
+        break
+      case 'organization':
+        if (displayIdentity.id) {
+          router.push(`/organization/${displayIdentity.id}`)
+        }
+        break
+      case 'user':
+      default:
+        if (displayIdentity.id) {
+          router.push(`/user/${displayIdentity.id}`)
+        }
+        break
+    }
   }
 
   const getAuthorColor = (type: string) => {
@@ -180,8 +228,8 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
 
   const getIdentityIcon = (type: string) => {
     switch(type) {
-      case "faith_admin": return <Shield className="h-4 w-4 text-white" />
-      case "organization": return <Users className="h-4 w-4 text-white" />
+      case "faith_admin": return <Shield className="h-5 w-5 text-white" />
+      case "organization": return <Users className="h-5 w-5 text-white" />
       default: return null
     }
   }
@@ -199,44 +247,179 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
     setPreviewOpen(true)
   }
 
+  // Check if author is clickable (must have an ID or be faith_admin)
+  const isAuthorClickable = displayIdentity.type === 'faith_admin' || 
+                            (displayIdentity.id !== null && displayIdentity.id !== undefined)
+
+  // Optimized Multi-Image Layout Renderer
+  const renderMultipleImages = () => {
+    const count = post.imageUrls.length
+
+    if (count === 2) {
+      // 2 images: Side by side
+      return (
+        <div className="grid grid-cols-2 gap-1 mb-3 -mx-1">
+          {post.imageUrls.map((url, idx) => (
+            <div 
+              key={idx} 
+              className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+              style={{ aspectRatio: '4/3' }}
+              onClick={() => handleImageClick(idx)}
+            >
+              <img 
+                src={url} 
+                alt={`Image ${idx + 1}`} 
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (count === 3) {
+      // 3 images: 1 on top (larger), 2 on bottom (equal size)
+      return (
+        <div className="mb-3 -mx-1">
+          {/* Top: Single large image */}
+          <div 
+            className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group mb-1"
+            style={{ aspectRatio: '16/9' }}
+            onClick={() => handleImageClick(0)}
+          >
+            <img 
+              src={post.imageUrls[0]} 
+              alt="Image 1" 
+              className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+          </div>
+
+          {/* Bottom: 2 equal images */}
+          <div className="grid grid-cols-2 gap-1">
+            {post.imageUrls.slice(1, 3).map((url, idx) => (
+              <div 
+                key={idx + 1} 
+                className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+                style={{ aspectRatio: '4/3' }}
+                onClick={() => handleImageClick(idx + 1)}
+              >
+                <img 
+                  src={url} 
+                  alt={`Image ${idx + 2}`} 
+                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    if (count === 4) {
+      // 4 images: 2x2 grid
+      return (
+        <div className="grid grid-cols-2 gap-1 mb-3 -mx-1">
+          {post.imageUrls.map((url, idx) => (
+            <div 
+              key={idx} 
+              className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+              style={{ aspectRatio: '1/1' }}
+              onClick={() => handleImageClick(idx)}
+            >
+              <img 
+                src={url} 
+                alt={`Image ${idx + 1}`} 
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    // 5+ images: Show first 4 in 2x2 grid with "+N more" overlay on last image
+    const remaining = count - 4
+    return (
+      <div className="grid grid-cols-2 gap-1 mb-3 -mx-1">
+        {post.imageUrls.slice(0, 4).map((url, idx) => {
+          const isLast = idx === 3
+          
+          return (
+            <div 
+              key={idx} 
+              className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
+              style={{ aspectRatio: '1/1' }}
+              onClick={() => handleImageClick(idx)}
+            >
+              <img 
+                src={url} 
+                alt={`Image ${idx + 1}`} 
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              />
+              
+              {!isLast && (
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+              )}
+              
+              {isLast && remaining > 0 && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <span className="text-white text-4xl font-bold drop-shadow-lg">+{remaining}</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   if (loading && !post.postedAsType) {
     return (
-      <div className="bg-white rounded-xl border border-gray-300 p-4 animate-pulse">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="h-10 w-10 rounded-lg bg-gray-200"></div>
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 animate-pulse">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="h-12 w-12 rounded-xl bg-gray-200"></div>
           <div className="flex-1">
             <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
             <div className="h-3 bg-gray-200 rounded w-24"></div>
           </div>
         </div>
-        <div className="h-20 bg-gray-200 rounded"></div>
+        <div className="h-24 bg-gray-200 rounded-xl"></div>
       </div>
     )
   }
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-300 overflow-hidden hover:border-gray-400 transition-all duration-200">
-        <div className="p-4">
+      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
+        <div className="p-6">
           {/* Header */}
-          <div className="flex items-start gap-3 mb-3">
+          <div className="flex items-start gap-3 mb-4">
+            {/* Clickable Avatar */}
             <button
-              onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
-              disabled={displayIdentity.type !== 'user'}
-              className={displayIdentity.type === 'user' ? 'cursor-pointer' : 'cursor-default'}
+              onClick={handleAuthorClick}
+              disabled={!isAuthorClickable}
+              className={isAuthorClickable ? 'cursor-pointer' : 'cursor-default'}
             >
               {displayIdentity.avatarUrl ? (
                 <img 
                   src={displayIdentity.avatarUrl} 
                   alt={displayIdentity.name}
-                  className="h-10 w-10 rounded-lg object-cover flex-shrink-0 shadow-sm hover:opacity-80 transition-opacity"
+                  className={`h-12 w-12 rounded-xl object-cover flex-shrink-0 shadow-sm ${
+                    isAuthorClickable ? 'hover:opacity-80 transition-opacity' : ''
+                  }`}
                 />
               ) : (
-                <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center text-lg flex-shrink-0 shadow-sm`}>
+                <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${getAuthorColor(displayIdentity.type)} flex items-center justify-center flex-shrink-0 shadow-sm ${
+                  isAuthorClickable ? 'hover:opacity-80 transition-opacity' : ''
+                }`}>
                   {displayIdentity.type !== 'user' ? (
                     getIdentityIcon(displayIdentity.type)
                   ) : (
-                    <span className="text-white font-bold text-xs">{getInitials(displayIdentity.name)}</span>
+                    <span className="text-white font-bold text-lg">{getInitials(displayIdentity.name)}</span>
                   )}
                 </div>
               )}
@@ -245,10 +428,13 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Clickable Author Name */}
                     <button
-                      onClick={() => displayIdentity.type === 'user' && handleUserClick(post.authorId)}
-                      disabled={displayIdentity.type !== 'user'}
-                      className={`font-bold text-gray-900 ${displayIdentity.type === 'user' ? 'hover:underline cursor-pointer' : 'cursor-default'}`}
+                      onClick={handleAuthorClick}
+                      disabled={!isAuthorClickable}
+                      className={`font-bold text-gray-900 ${
+                        isAuthorClickable ? 'hover:underline cursor-pointer hover:text-blue-600 transition-colors' : 'cursor-default'
+                      }`}
                     >
                       {displayIdentity.name}
                     </button>
@@ -271,16 +457,14 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{post.time}</span>
                     {editedAt && (
                       <>
                         <span>•</span>
-                        <span className="text-gray-400 italic">
-                          Edited {new Date(editedAt).toLocaleString('en-US', { 
-                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
-                          })}
+                        <span className="italic">
+                          Edited
                         </span>
                       </>
                     )}
@@ -293,6 +477,15 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                         </span>
                       </>
                     )}
+                    {/* Tagged Users */}
+                    <span>•</span>
+                    <TaggedUsersDisplay
+                      contentType="post"
+                      contentId={post.id}
+                      canEdit={canEditTags}
+                      onTagsUpdated={handlePostUpdate}
+                      initialCount={post.taggedUsersCount || 0}
+                    />
                   </div>
                 </div>
                 {postEventId && (
@@ -310,53 +503,22 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
             </div>
           </div>
 
-          {/* OPTIMIZED: Tagged Users with pre-fetched count */}
-          <div className="mb-3">
-            <TaggedUsersDisplay
-              contentType="post"
-              contentId={post.id}
-              canEdit={canEditTags}
-              onTagsUpdated={handlePostUpdate}
-              initialCount={post.taggedUsersCount || 0} // OPTIMIZED: Pass pre-fetched count
-            />
-          </div>
-
           {/* Content */}
-          <p className="text-gray-800 text-sm leading-relaxed mb-3">{post.content}</p>
+          <p className="text-gray-800 leading-relaxed whitespace-pre-wrap mb-4">{post.content}</p>
 
-          {/* Images Grid */}
-          {post.imageUrls.length > 0 && (
-            <div className={`mb-3 ${
-              post.imageUrls.length === 1 ? 'grid grid-cols-1' :
-              post.imageUrls.length === 2 ? 'grid grid-cols-2 gap-2' :
-              'grid grid-cols-2 gap-2'
-            }`}>
-              {post.imageUrls.slice(0, 4).map((url, idx) => (
-                <div 
-                  key={idx} 
-                  className={`relative overflow-hidden rounded-lg bg-gray-100 cursor-pointer group ${
-                    post.imageUrls.length === 1 ? 'aspect-video' : 'aspect-square'
-                  }`}
-                  onClick={() => handleImageClick(idx)}
-                >
-                  <img 
-                    src={url} 
-                    alt="Post" 
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                  {idx === 3 && post.imageUrls.length > 4 && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                      <span className="text-white text-2xl font-bold">+{post.imageUrls.length - 4}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Images with Optimized Layouts */}
+          {post.imageUrls.length === 1 ? (
+            <SingleImageDisplay
+              imageUrl={post.imageUrls[0]}
+              onImageClick={() => handleImageClick(0)}
+              alt="Post image"
+            />
+          ) : post.imageUrls.length > 0 ? (
+            renderMultipleImages()
+          ) : null}
 
           {/* Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="flex items-center gap-1">
               <ReactionButton 
                 contentType="post"
@@ -383,6 +545,7 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
                 contentType="post"
                 contentId={post.id}
                 onRepostChange={handleReactionChange}
+                onRepostCreated={onRepostCreated}
               />
               <button className="p-1.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg transition-colors">
                 <Share2 className="h-3.5 w-3.5" />
@@ -406,12 +569,13 @@ export function PostCard({ post, eventId, onPostDeleted, onPostUpdated }: PostCa
 
         {/* Comment Section */}
         {showComments && postEventId && (
-          <div className="border-t border-gray-200 p-4 bg-gray-50 animate-in slide-in-from-top-2 duration-200">
+          <div className="border-t border-gray-200 p-4 bg-gray-50">
             <CommentSection 
               contentType="post"
               contentId={post.id} 
               eventId={postEventId}
               initialCount={commentCount}
+              avatarCache={avatarCache}
             />
           </div>
         )}

@@ -23,16 +23,12 @@ export default function RootLayout({
         {showUI ? (
           // Changed bg-gray-50 to bg-[#FDFCF8] for a warm paper look
           <div className="min-h-screen bg-[#FDFCF8]">
-            {/* Fixed Navbar */}
-            <Navbar />
-            
+            <Navbar />     
             <div className="flex h-[calc(100vh-72px)] mt-[72px]">
-              {/* Fixed Sidebar - Increased rounding styling inside the component */}
               <div className="fixed left-0 top-[72px] h-[calc(100vh-72px)] w-64 z-20 hidden md:block">
                 <Sidebar />
               </div>
-              
-              {/* Scrollable Main Content - Centered and widened */}
+
               <div className="flex-1 md:ml-64 md:mr-80 overflow-y-auto scrollbar-hide">
                 <div className="min-h-full px-4 py-6">
                   {children}

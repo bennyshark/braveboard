@@ -1,4 +1,4 @@
-// components/menus/FreeWallOptionsMenu.tsx
+// components/menus/FreeWallOptionsMenu.tsx - OPTIMIZED: Immediate UI update on delete
 "use client"
 import { useState, useRef, useEffect } from "react"
 import { MoreVertical, Edit2, Trash2 } from "lucide-react"
@@ -9,14 +9,14 @@ interface FreeWallOptionsMenuProps {
   postId: string
   authorId: string
   content: string
-  onUpdate: () => void
+  onDelete?: (postId: string) => void
 }
 
 export function FreeWallOptionsMenu({ 
   postId, 
   authorId, 
   content,
-  onUpdate
+  onDelete
 }: FreeWallOptionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -37,10 +37,8 @@ export function FreeWallOptionsMenu({
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // User can edit their own posts
         setCanEdit(user.id === authorId)
 
-        // User can delete their own posts, or admins can delete any
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
@@ -76,8 +74,13 @@ export function FreeWallOptionsMenu({
       const { error } = await supabase.from('free_wall_posts').delete().eq('id', postId)
       if (error) throw error
       
+      console.log('Post deleted successfully, triggering immediate UI update...')
       setShowMenu(false)
-      onUpdate()
+      
+      // OPTIMIZED: Immediately call onDelete to remove from state
+      if (onDelete) {
+        onDelete(postId)
+      }
     } catch (error: any) {
       console.error('Error deleting post:', error)
       alert(`Failed to delete: ${error.message}`)
@@ -138,7 +141,10 @@ export function FreeWallOptionsMenu({
           postId={postId}
           initialContent={content}
           onClose={() => setShowEditDialog(false)}
-          onUpdate={onUpdate}
+          onUpdate={() => {
+            // Editing doesn't need full reload, just close dialog
+            setShowEditDialog(false)
+          }}
         />
       )}
     </div>
