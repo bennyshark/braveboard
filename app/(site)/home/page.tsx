@@ -22,7 +22,7 @@ import { RepostCard } from "@/components/feed/RepostCard";
 import { CreateFreeWallPostDialog } from "@/components/posts/CreateFreeWallPostDialog";
 import { useSearchParams } from "next/navigation";
 
-// ADDED: Avatar cache type
+// Avatar cache type
 type AvatarCache = {
   faithAdmin: string | null;
   organizations: Map<string, string | null>;
@@ -44,7 +44,7 @@ type Announcement = {
   repostCount?: number;
   createdBy?: string;
   taggedUsersCount?: number;
-  organizerId?: string; // ADDED
+  organizerId?: string;
 };
 
 type Bulletin = {
@@ -63,7 +63,7 @@ type Bulletin = {
   repostCount?: number;
   createdBy?: string;
   taggedUsersCount?: number;
-  organizerId?: string; // ADDED
+  organizerId?: string;
 };
 
 type FreeWallPost = {
@@ -168,13 +168,13 @@ function HomeContent() {
   const [userCreateOrgs, setUserCreateOrgs] = useState<Organization[]>([]);
   const [isFaithAdmin, setIsFaithAdmin] = useState(false);
 
-  // ADDED: Avatar cache state
   const [avatarCache, setAvatarCache] = useState<AvatarCache>({
     faithAdmin: null,
     organizations: new Map(),
   });
 
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // FIXED: Separate initialization states
+  const [isInitializingApp, setIsInitializingApp] = useState(true);
   const [isLoadingFreeWall, setIsLoadingFreeWall] = useState(false);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isLoadingBulletins, setIsLoadingBulletins] = useState(false);
@@ -238,52 +238,55 @@ function HomeContent() {
     setTimeout(() => setHighlightedId(null), 3000);
   };
 
-  // ADDED: Prefetch avatars function
-  const prefetchAvatars = async () => {
+  // FIXED: Prefetch avatars and organizations together
+  const initializeAppData = async () => {
     try {
-      console.log("🎨 Prefetching avatars...");
+      console.log("🚀 Initializing app data...");
+      
+      // Step 1: Fetch avatars and organizations in parallel
+      const [faithAdminRes, orgsRes, userRes] = await Promise.all([
+        supabase.from("faith_admin_settings").select("avatar_url").single(),
+        supabase.from("organizations").select("id, code, name, member_count, avatar_url").order("name"),
+        supabase.auth.getUser()
+      ]);
 
-      // Fetch Faith Admin avatar
-      const { data: faithAdminData } = await supabase
-        .from("faith_admin_settings")
-        .select("avatar_url")
-        .single();
-
-      // Fetch all organization avatars
-      const { data: orgsData } = await supabase
-        .from("organizations")
-        .select("id, avatar_url");
-
+      // Step 2: Build avatar cache
       const orgAvatarMap = new Map<string, string | null>();
-      orgsData?.forEach((org) => {
+      const orgsData = orgsRes.data || [];
+      orgsData.forEach((org) => {
         orgAvatarMap.set(org.id, org.avatar_url);
       });
 
       setAvatarCache({
-        faithAdmin: faithAdminData?.avatar_url || null,
+        faithAdmin: faithAdminRes.data?.avatar_url || null,
         organizations: orgAvatarMap,
       });
 
-      console.log("✅ Avatars prefetched:", {
-        faithAdmin: !!faithAdminData?.avatar_url,
-        orgs: orgAvatarMap.size,
-      });
-    } catch (error) {
-      console.error("Error prefetching avatars:", error);
-    }
-  };
+      // Step 3: Set organizations
+      const fetchedOrgs: Organization[] = [
+        {
+          id: "faith_admin",
+          code: "FAITH",
+          name: "FAITH Administration",
+          role: "admin",
+          members: 0,
+        },
+        ...orgsData.map((o: any) => ({
+          id: o.id,
+          code: o.code,
+          name: o.name,
+          role: "",
+          members: o.member_count,
+        })),
+      ];
+      setAllOrganizations(fetchedOrgs);
 
-  const loadUserData = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
+      // Step 4: Load user-specific data
+      if (userRes.data.user) {
         const { data: profile } = await supabase
           .from("profiles")
           .select("role")
-          .eq("id", user.id)
+          .eq("id", userRes.data.user.id)
           .single();
 
         setIsFaithAdmin(profile?.role === "admin");
@@ -291,7 +294,7 @@ function HomeContent() {
         const { data: memberships } = await supabase
           .from("user_organizations")
           .select(`role, organization:organizations (id, code, name)`)
-          .eq("user_id", user.id)
+          .eq("user_id", userRes.data.user.id)
           .in("role", ["officer", "admin"]);
 
         const validUserOrgs: Organization[] =
@@ -305,32 +308,13 @@ function HomeContent() {
         setUserCreateOrgs(validUserOrgs);
       }
 
-      const { data: orgsData, error: orgsError } = await supabase
-        .from("organizations")
-        .select("id, code, name, member_count")
-        .order("name");
-
-      if (orgsError) throw orgsError;
-
-      const fetchedOrgs: Organization[] = [
-        {
-          id: "faith_admin",
-          code: "FAITH",
-          name: "FAITH Administration",
-          role: "admin",
-          members: 0,
-        },
-        ...(orgsData?.map((o: any) => ({
-          id: o.id,
-          code: o.code,
-          name: o.name,
-          role: "",
-          members: o.member_count,
-        })) || []),
-      ];
-      setAllOrganizations(fetchedOrgs);
+      console.log("✅ App data initialized:", {
+        faithAdmin: !!faithAdminRes.data?.avatar_url,
+        orgs: orgAvatarMap.size,
+        totalOrgs: fetchedOrgs.length
+      });
     } catch (err) {
-      console.error("Error loading user data:", err);
+      console.error("Error initializing app data:", err);
     }
   };
 
@@ -388,13 +372,11 @@ function HomeContent() {
         if (data.posted_as_type === "faith_admin") {
           authorName = "FAITH Administration";
           authorType = "faith_admin";
-          // ADDED: Use cached avatar
           authorAvatar = avatarCache.faithAdmin;
         } else if (
           data.posted_as_type === "organization" &&
           data.posted_as_org_id
         ) {
-          // ADDED: Use cached avatar
           authorAvatar =
             avatarCache.organizations.get(data.posted_as_org_id) || null;
 
@@ -460,11 +442,9 @@ function HomeContent() {
         if (data.creator_type === "faith_admin") {
           creatorName = "FAITH Administration";
           creatorType = "faith_admin";
-          // ADDED: Use cached avatar
           creatorAvatar = avatarCache.faithAdmin;
         } else if (data.creator_type === "organization" && data.creator_org) {
           creatorName = data.creator_org.name;
-          // ADDED: Use cached avatar
           creatorAvatar =
             avatarCache.organizations.get(data.creator_org_id) || null;
           creatorType = "organization";
@@ -509,11 +489,9 @@ function HomeContent() {
         if (data.creator_type === "faith_admin") {
           creatorName = "FAITH Administration";
           creatorType = "faith_admin";
-          // ADDED: Use cached avatar
           creatorAvatar = avatarCache.faithAdmin;
         } else if (data.creator_type === "organization" && data.creator_org) {
           creatorName = data.creator_org.name;
-          // ADDED: Use cached avatar
           creatorAvatar =
             avatarCache.organizations.get(data.creator_org_id) || null;
           creatorType = "organization";
@@ -872,7 +850,6 @@ function HomeContent() {
         ]) || []
       );
 
-      // FIXED: Fetch org names (avatars already cached)
       const orgIds = [
         ...new Set(
           allPosts
@@ -975,17 +952,14 @@ function HomeContent() {
 
           if (p.posted_as_type === "faith_admin") {
             displayName = "FAITH Administration";
-            // ADDED: Use cached avatar
             displayAvatar = avatarCache.faithAdmin;
             displayAuthorType = "faith_admin";
           } else if (
             p.posted_as_type === "organization" &&
             p.posted_as_org_id
           ) {
-            // Use cached avatar
             displayAvatar =
               avatarCache.organizations.get(p.posted_as_org_id) || null;
-            // Use pre-fetched name
             displayName = orgNameMap.get(p.posted_as_org_id) || "Organization";
             displayAuthorType = "organization";
           } else {
@@ -1119,7 +1093,7 @@ function HomeContent() {
             repostCount: row.repost_count || 0,
             createdBy: row.created_by,
             taggedUsersCount: tagCountMap.get(row.id) || 0,
-            organizerId: row.creator_org_id, // ADDED
+            organizerId: row.creator_org_id,
           };
         }
       );
@@ -1199,7 +1173,7 @@ function HomeContent() {
           repostCount: row.repost_count || 0,
           createdBy: row.created_by,
           taggedUsersCount: tagCountMap.get(row.id) || 0,
-          organizerId: row.creator_org_id, // ADDED
+          organizerId: row.creator_org_id,
         };
       });
 
@@ -1212,6 +1186,7 @@ function HomeContent() {
     }
   };
 
+  // FIXED: Only load content for tab, not initialization data
   const loadTabData = async (tab: string) => {
     if (loadedTabs.has(tab)) {
       return;
@@ -1314,33 +1289,36 @@ function HomeContent() {
     }
   }, [shouldAutoLoad, initialBatchLoaded, activeFeedFilter]);
 
+  // FIXED: Initialize app data first, then load initial tab content
   useEffect(() => {
-    async function initializeData() {
-      setIsInitialLoading(true);
+    async function initialize() {
+      setIsInitializingApp(true);
       try {
-        // ADDED: Prefetch avatars first
-        await prefetchAvatars();
-        await loadUserData();
+        // Step 1: Initialize app data (avatars, orgs, user data)
+        await initializeAppData();
+        
+        // Step 2: Load initial tab content
         await loadTabData(activeFeedFilter);
       } catch (err) {
-        console.error("Error initializing data:", err);
+        console.error("Error initializing:", err);
       } finally {
-        setIsInitialLoading(false);
+        setIsInitializingApp(false);
       }
     }
 
-    initializeData();
+    initialize();
   }, []);
 
+  // FIXED: Load tab data when filter changes (only after initialization)
   useEffect(() => {
-    if (!isInitialLoading) {
+    if (!isInitializingApp) {
       if (activeFeedFilter === "free_wall" && !loadedTabs.has("free_wall")) {
         setInitialBatchLoaded(false);
         setShouldAutoLoad(false);
       }
       loadTabData(activeFeedFilter);
     }
-  }, [activeFeedFilter]);
+  }, [activeFeedFilter, isInitializingApp]);
 
   useEffect(() => {
     if (
@@ -1396,7 +1374,7 @@ function HomeContent() {
       setActiveFeedFilter(tab);
     }
 
-    if (scrollTo && !isInitialLoading) {
+    if (scrollTo && !isInitializingApp) {
       setTimeout(() => {
         const element = contentRefs.current.get(scrollTo);
         if (element) {
@@ -1406,10 +1384,10 @@ function HomeContent() {
         }
       }, 500);
     }
-  }, [searchParams, isInitialLoading]);
+  }, [searchParams, isInitializingApp]);
 
   useEffect(() => {
-    if (pendingScrollTo && !isInitialLoading) {
+    if (pendingScrollTo && !isInitializingApp) {
       setTimeout(() => {
         const element = contentRefs.current.get(pendingScrollTo.id);
         if (element) {
@@ -1433,7 +1411,7 @@ function HomeContent() {
         }
       }, 100);
     }
-  }, [pendingScrollTo, isInitialLoading, activeFeedFilter]);
+  }, [pendingScrollTo, isInitializingApp, activeFeedFilter]);
 
   const feedFilters = [
     { id: "free_wall", label: "Free Wall", icon: MessageSquare, color: "gray" },
@@ -1534,8 +1512,9 @@ function HomeContent() {
     return true;
   });
 
+  // FIXED: Check if currently loading
   const isCurrentTabLoading = () => {
-    if (isInitialLoading) return true;
+    if (isInitializingApp) return true;
 
     switch (activeFeedFilter) {
       case "free_wall":
@@ -1620,16 +1599,19 @@ function HomeContent() {
         </div>
       </div>
 
-      <FeedFilters
-        activeFilter={activeFeedFilter}
-        organizations={allOrganizations}
-        selectedOrg={selectedOrg}
-        setSelectedOrg={setSelectedOrg}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        selectedSource={selectedAnnouncementSource}
-        setSelectedSource={setSelectedAnnouncementSource}
-      />
+      {/* FIXED: Render filters only after app initialization */}
+      {!isInitializingApp && (
+        <FeedFilters
+          activeFilter={activeFeedFilter}
+          organizations={allOrganizations}
+          selectedOrg={selectedOrg}
+          setSelectedOrg={setSelectedOrg}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          selectedSource={selectedAnnouncementSource}
+          setSelectedSource={setSelectedAnnouncementSource}
+        />
+      )}
 
       <div className="space-y-5">
         {isCurrentTabLoading() ? (
