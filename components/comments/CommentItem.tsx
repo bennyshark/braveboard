@@ -17,6 +17,7 @@ import { CommentOptionsMenu } from "@/components/menus/CommentOptionsMenu"
 import { InlineCommentBox } from "./InlineCommentBox"
 import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
+import { ImagePreviewModal } from "@/components/feed/ImagePreviewModal" // Import the modal
 
 type Comment = {
   id: string
@@ -63,6 +64,10 @@ export function CommentItem({
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showReplyBox, setShowReplyBox] = useState(false)
+  
+  // New state for image preview
+  const [showImagePreview, setShowImagePreview] = useState(false)
+  
   const [reactionCount, setReactionCount] = useState(comment.reactionCount || 0)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const hasReplies = comment.replies.length > 0
@@ -211,186 +216,201 @@ export function CommentItem({
   }
 
   return (
-    <div 
-      id={`comment-${comment.id}`}
-      className={`${isFirstLevelReply ? 'ml-8 border-l-2 border-blue-100 pl-4' : ''} transition-all duration-300`}
-    >
-      <div className={`comment-card rounded-xl p-3 border transition-all duration-300 ${
-        isDeleted ? 'bg-gray-100 border-gray-300' : 'bg-gray-50 border-gray-200'
-      }`}>
-        <div className="flex items-start gap-2 mb-2">
-          {/* Avatar Section */}
-          <div 
-            onClick={handleAuthorClick}
-            className={`flex-shrink-0 ${!isDeleted ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-          >
-            {isDeleted ? (
-              <div className="h-7 w-7 rounded-lg bg-gray-300 flex items-center justify-center">
-                <Trash2 className="h-3 w-3 text-gray-500" />
-              </div>
-            ) : avatarUrl ? (
-              <img 
-                src={avatarUrl}
-                alt={comment.authorName}
-                className="h-7 w-7 rounded-lg object-cover"
-              />
-            ) : (
-              <div className={`h-7 w-7 rounded-lg bg-gradient-to-br ${getAvatarGradient(comment.postedAsType)} flex items-center justify-center`}>
-                {comment.postedAsType !== 'user' ? (
-                  getIdentityIcon(comment.postedAsType)
-                ) : (
-                  <span className="text-white font-bold text-xs">{getInitials(comment.authorName)}</span>
-                )}
-              </div>
-            )}
-          </div>
-          
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Author Name Section */}
-                <span 
-                  onClick={handleAuthorClick}
-                  className={`font-bold text-sm ${
-                    isDeleted 
-                      ? 'text-gray-500 italic' 
-                      : 'text-gray-900 cursor-pointer hover:underline hover:text-blue-600 transition-colors'
-                  }`}
-                >
-                  {isDeleted ? 'Deleted User' : comment.authorName}
-                </span>
-                
-                {!isDeleted && getIdentityBadge(comment.postedAsType)}
-                
-                <span className="flex items-center gap-1 text-xs text-gray-500">
-                  <Clock className="h-3 w-3" />
-                  {comment.createdAt}
-                </span>
-              </div>
-              
-              {!isDeleted && (
-                <CommentOptionsMenu
-                  commentId={comment.id}
-                  authorId={comment.authorId}
-                  hasReplies={hasReplies}
-                  onUpdate={onCommentCreated}
+    <>
+      <div 
+        id={`comment-${comment.id}`}
+        className={`${isFirstLevelReply ? 'ml-8 border-l-2 border-blue-100 pl-4' : ''} transition-all duration-300`}
+      >
+        <div className={`comment-card rounded-xl p-3 border transition-all duration-300 ${
+          isDeleted ? 'bg-gray-100 border-gray-300' : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-start gap-2 mb-2">
+            {/* Avatar Section */}
+            <div 
+              onClick={handleAuthorClick}
+              className={`flex-shrink-0 ${!isDeleted ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+            >
+              {isDeleted ? (
+                <div className="h-7 w-7 rounded-lg bg-gray-300 flex items-center justify-center">
+                  <Trash2 className="h-3 w-3 text-gray-500" />
+                </div>
+              ) : avatarUrl ? (
+                <img 
+                  src={avatarUrl}
+                  alt={comment.authorName}
+                  className="h-7 w-7 rounded-lg object-cover"
                 />
+              ) : (
+                <div className={`h-7 w-7 rounded-lg bg-gradient-to-br ${getAvatarGradient(comment.postedAsType)} flex items-center justify-center`}>
+                  {comment.postedAsType !== 'user' ? (
+                    getIdentityIcon(comment.postedAsType)
+                  ) : (
+                    <span className="text-white font-bold text-xs">{getInitials(comment.authorName)}</span>
+                  )}
+                </div>
               )}
             </div>
             
-            {comment.replyingToName && (
-              <button 
-                onClick={handleJumpToParent}
-                className="group flex items-center gap-1.5 text-xs mb-2 bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 px-2 py-1 rounded-md transition-all shadow-sm w-fit"
-                title="Scroll to parent comment"
-              >
-                <CornerUpLeft className="h-3 w-3 text-gray-400 group-hover:text-blue-500 transition-colors" />
-                <span className="text-gray-500 group-hover:text-blue-600 transition-colors">
-                  Replying to <span className="font-bold text-gray-700 group-hover:text-blue-700">
-                    {comment.replyingToName === '[Comment deleted]' ? 'Deleted Comment' : comment.replyingToName}
-                  </span>
-                </span>
-              </button>
-            )}
-            
-            <p className={`text-sm leading-relaxed mb-2 ${
-              isDeleted ? 'text-gray-500 italic' : 'text-gray-800'
-            }`}>
-              {comment.content}
-            </p>
-            
-            {!isDeleted && comment.imageUrl && (
-              <img 
-                src={comment.imageUrl} 
-                alt="Comment attachment" 
-                className="rounded-lg max-w-[240px] w-full mt-2 border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
-                onClick={() => window.open(comment.imageUrl!, '_blank')}
-              />
-            )}
-            
-            {!isDeleted && (
-              <div className="flex items-center justify-between mt-2">
-                <div className="flex items-center gap-2">
-                  <ReactionButton 
-                    contentType="comment"
-                    contentId={comment.id}
-                    onReactionChange={handleReactionChange}
-                  />
-                  <button 
-                    onClick={handleReplyClick}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-xs font-bold ${
-                      showReplyBox 
-                        ? 'text-green-700 bg-green-100' 
-                        : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Author Name Section */}
+                  <span 
+                    onClick={handleAuthorClick}
+                    className={`font-bold text-sm ${
+                      isDeleted 
+                        ? 'text-gray-500 italic' 
+                        : 'text-gray-900 cursor-pointer hover:underline hover:text-blue-600 transition-colors'
                     }`}
                   >
-                    <Reply className="h-3 w-3" />
-                    Reply
-                  </button>
+                    {isDeleted ? 'Deleted User' : comment.authorName}
+                  </span>
                   
-                  {hasReplies && (
-                    <button
-                      onClick={() => setIsCollapsed(!isCollapsed)}
-                      className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors text-xs font-bold"
-                    >
-                      {isCollapsed ? (
-                        <>
-                          <ChevronDown className="h-3 w-3" />
-                          Show {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
-                        </>
-                      ) : (
-                        <>
-                          <ChevronUp className="h-3 w-3" />
-                          Hide {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
-                        </>
-                      )}
-                    </button>
-                  )}
+                  {!isDeleted && getIdentityBadge(comment.postedAsType)}
+                  
+                  <span className="flex items-center gap-1 text-xs text-gray-500">
+                    <Clock className="h-3 w-3" />
+                    {comment.createdAt}
+                  </span>
                 </div>
-
-                <ReactionSummary 
-                  contentType="comment"
-                  contentId={comment.id}
-                  totalCount={reactionCount}
-                  refreshTrigger={refreshTrigger}
-                />
+                
+                {!isDeleted && (
+                  <CommentOptionsMenu
+                    commentId={comment.id}
+                    authorId={comment.authorId}
+                    hasReplies={hasReplies}
+                    onUpdate={onCommentCreated}
+                  />
+                )}
               </div>
-            )}
+              
+              {comment.replyingToName && (
+                <button 
+                  onClick={handleJumpToParent}
+                  className="group flex items-center gap-1.5 text-xs mb-2 bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 px-2 py-1 rounded-md transition-all shadow-sm w-fit"
+                  title="Scroll to parent comment"
+                >
+                  <CornerUpLeft className="h-3 w-3 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                  <span className="text-gray-500 group-hover:text-blue-600 transition-colors">
+                    Replying to <span className="font-bold text-gray-700 group-hover:text-blue-700">
+                      {comment.replyingToName === '[Comment deleted]' ? 'Deleted Comment' : comment.replyingToName}
+                    </span>
+                  </span>
+                </button>
+              )}
+              
+              <p className={`text-sm leading-relaxed mb-2 ${
+                isDeleted ? 'text-gray-500 italic' : 'text-gray-800'
+              }`}>
+                {comment.content}
+              </p>
+              
+              {!isDeleted && comment.imageUrl && (
+                // UPDATED: Larger image container and calls preview modal on click
+                <div className="mt-2 mb-3">
+                  <img 
+                    src={comment.imageUrl} 
+                    alt="Comment attachment" 
+                    className="rounded-lg max-w-lg w-full max-h-[500px] object-cover border border-gray-200 cursor-zoom-in hover:opacity-95 transition-opacity shadow-sm"
+                    onClick={() => setShowImagePreview(true)}
+                  />
+                </div>
+              )}
+              
+              {!isDeleted && (
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-2">
+                    <ReactionButton 
+                      contentType="comment"
+                      contentId={comment.id}
+                      onReactionChange={handleReactionChange}
+                    />
+                    <button 
+                      onClick={handleReplyClick}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-xs font-bold ${
+                        showReplyBox 
+                          ? 'text-green-700 bg-green-100' 
+                          : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
+                      }`}
+                    >
+                      <Reply className="h-3 w-3" />
+                      Reply
+                    </button>
+                    
+                    {hasReplies && (
+                      <button
+                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        className="flex items-center gap-1 px-2 py-1 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors text-xs font-bold"
+                      >
+                        {isCollapsed ? (
+                          <>
+                            <ChevronDown className="h-3 w-3" />
+                            Show {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
+                          </>
+                        ) : (
+                          <>
+                            <ChevronUp className="h-3 w-3" />
+                            Hide {comment.replies.length} {comment.replies.length === 1 ? 'reply' : 'replies'}
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  <ReactionSummary 
+                    contentType="comment"
+                    contentId={comment.id}
+                    totalCount={reactionCount}
+                    refreshTrigger={refreshTrigger}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {!isDeleted && showReplyBox && (
-        <div className={`mt-3 ${depth === 0 ? 'ml-8' : ''} animate-in slide-in-from-top-2 duration-200`}>
-          <InlineCommentBox
-            contentType={contentType}
-            contentId={contentId}
-            eventId={eventId}
-            parentCommentId={comment.id}
-            replyingTo={comment.authorName}
-            onCancel={() => setShowReplyBox(false)}
-            onCommentCreated={handleReplyCreated}
-          />
-        </div>
-      )}
-      
-      {hasReplies && !isCollapsed && (
-        <div className="space-y-3 mt-3">
-          {comment.replies.map(reply => (
-            <CommentItem 
-              key={reply.id} 
-              comment={reply}
+        {!isDeleted && showReplyBox && (
+          <div className={`mt-3 ${depth === 0 ? 'ml-8' : ''} animate-in slide-in-from-top-2 duration-200`}>
+            <InlineCommentBox
               contentType={contentType}
               contentId={contentId}
               eventId={eventId}
-              onCommentCreated={onCommentCreated}
-              depth={depth + 1}
-              isInsideModal={isInsideModal}
-              avatarCache={avatarCache}
+              parentCommentId={comment.id}
+              replyingTo={comment.authorName}
+              onCancel={() => setShowReplyBox(false)}
+              onCommentCreated={handleReplyCreated}
             />
-          ))}
-        </div>
+          </div>
+        )}
+        
+        {hasReplies && !isCollapsed && (
+          <div className="space-y-3 mt-3">
+            {comment.replies.map(reply => (
+              <CommentItem 
+                key={reply.id} 
+                comment={reply}
+                contentType={contentType}
+                contentId={contentId}
+                eventId={eventId}
+                onCommentCreated={onCommentCreated}
+                depth={depth + 1}
+                isInsideModal={isInsideModal}
+                avatarCache={avatarCache}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Render the Image Preview Modal */}
+      {!isDeleted && comment.imageUrl && (
+        <ImagePreviewModal
+          images={[comment.imageUrl]}
+          initialIndex={0}
+          isOpen={showImagePreview}
+          onClose={() => setShowImagePreview(false)}
+        />
       )}
-    </div>
+    </>
   )
 }
