@@ -1,7 +1,7 @@
 // components/common/navbar.tsx
 "use client"
 
-import { Search, Moon, Bell, Menu } from "lucide-react"
+import { Search, Bell, Menu } from "lucide-react"
 import { useState } from "react"
 
 export default function Navbar() {
@@ -29,30 +29,12 @@ export default function Navbar() {
             </div>
           </div>
 
-          {/* Search Bar - Styled like a paper cutout */}
-          <div className="flex-1 max-w-xl mx-4 md:mx-8 hidden sm:block">
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-stone-400 group-focus-within:text-blue-500 transition-colors" />
-              <input
-                type="search"
-                placeholder="Search memories, events, or people..."
-                className="w-full pl-11 pr-4 py-3 border-2 border-stone-100 bg-white rounded-2xl focus:bg-white focus:outline-none focus:border-blue-200 focus:ring-4 focus:ring-blue-50 transition-all text-sm placeholder:text-stone-400 shadow-sm"
-              />
-            </div>
-          </div>
 
           {/* Right Actions */}
           <div className="flex items-center gap-2 md:gap-4">
             <button className="p-2.5 text-stone-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors relative">
               <Bell className="h-5 w-5" />
               <span className="absolute top-2 right-2.5 h-2 w-2 bg-orange-400 rounded-full border border-white"></span>
-            </button>
-
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2.5 text-stone-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-            >
-              <Moon className="h-5 w-5" />
             </button>
             
             {/* Mobile Search Trigger */}

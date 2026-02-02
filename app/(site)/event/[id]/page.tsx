@@ -1,4 +1,4 @@
-// app/(site)/event/[id]/page.tsx - WITH REPOST NAVIGATION
+// app/(site)/event/[id]/page.tsx - FIXED WITH AVATAR CACHE
 "use client"
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
@@ -22,6 +22,13 @@ type Post = {
   likes: number
   comments: number
   imageUrls: string[]
+  postedAsType?: string
+  postedAsOrgId?: string | null
+  reactionCount?: number
+  repostCount?: number
+  editedAt?: string | null
+  pinOrder?: number | null
+  taggedUsersCount?: number
 }
 
 type ParticipantData = {
@@ -183,6 +190,14 @@ function EventDetailsContent() {
   const [isFaithAdmin, setIsFaithAdmin] = useState(false)
   const [currentUserOrgs, setCurrentUserOrgs] = useState<string[]>([])
   
+  const [avatarCache, setAvatarCache] = useState<{
+    faithAdmin: string | null
+    organizations: Map<string, string | null>
+  }>({
+    faithAdmin: null,
+    organizations: new Map()
+  })
+  
   const postRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const observerRef = useRef<IntersectionObserver | null>(null)
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
@@ -215,6 +230,24 @@ function EventDetailsContent() {
         if (profileRes.data?.role === 'admin') setIsFaithAdmin(true)
         if (orgRes.data) setCurrentUserOrgs(orgRes.data.map((o: any) => o.organization_id))
       }
+
+      // Load avatar cache
+      const [faithAdminRes, orgsRes] = await Promise.all([
+        supabase.from('faith_admin_settings').select('avatar_url').single(),
+        supabase.from('organizations').select('id, avatar_url').order('name')
+      ])
+
+      const orgAvatarMap = new Map<string, string | null>()
+      if (orgsRes.data) {
+        orgsRes.data.forEach((org: any) => {
+          orgAvatarMap.set(org.id, org.avatar_url)
+        })
+      }
+
+      setAvatarCache({
+        faithAdmin: faithAdminRes.data?.avatar_url || null,
+        organizations: orgAvatarMap
+      })
 
       const { data: eventData, error: eventError } = await supabase
         .from('events')
@@ -319,6 +352,18 @@ function EventDetailsContent() {
 
       if (postsError) throw postsError
 
+      const postIds = postsData.map((p: any) => p.id)
+      const { data: tagCounts } = await supabase
+        .from('tags')
+        .select('content_id')
+        .eq('content_type', 'post')
+        .in('content_id', postIds)
+
+      const tagCountMap = new Map<string, number>()
+      tagCounts?.forEach((tag) => {
+        tagCountMap.set(tag.content_id, (tagCountMap.get(tag.content_id) || 0) + 1)
+      })
+
       const authorIds = [...new Set(postsData.map((p: any) => p.author_id))]
       
       const { data: authorsData } = await supabase
@@ -336,19 +381,62 @@ function EventDetailsContent() {
         ]) || []
       )
 
+      // Get organization names for org posts
+      const orgIds = [...new Set(
+        postsData
+          .filter((p: any) => p.posted_as_type === 'organization' && p.posted_as_org_id)
+          .map((p: any) => p.posted_as_org_id)
+      )]
+
+      const { data: orgsData } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', orgIds)
+
+      const orgNameMap = new Map(
+        orgsData?.map(org => [org.id, org.name]) || []
+      )
+
       const mappedPosts = postsData.map((post: any) => {
-        const authorData = authorMap.get(post.author_id) || { name: 'Unknown User', avatarUrl: '' }
+        let displayName = 'Unknown User'
+        let displayAvatar: string | null = null
+        let displayAuthorType = 'user'
+
+        // Handle different posted_as_type cases
+        if (post.posted_as_type === 'faith_admin') {
+          displayName = 'FAITH Administration'
+          displayAvatar = avatarCache.faithAdmin
+          displayAuthorType = 'faith_admin'
+        } else if (post.posted_as_type === 'organization' && post.posted_as_org_id) {
+          displayName = orgNameMap.get(post.posted_as_org_id) || 'Organization'
+          displayAvatar = avatarCache.organizations.get(post.posted_as_org_id) || null
+          displayAuthorType = 'organization'
+        } else {
+          // User post
+          const authorData = authorMap.get(post.author_id) || { name: 'Unknown User', avatarUrl: null }
+          displayName = authorData.name
+          displayAvatar = authorData.avatarUrl
+          displayAuthorType = 'user'
+        }
+
         return {
           id: post.id,
-          author: authorData.name,
+          author: displayName,
           authorId: post.author_id,
-          authorType: 'user',
-          avatarUrl: authorData.avatarUrl,
-          content: post.content,
+          authorType: displayAuthorType,
+          avatarUrl: displayAvatar || '',
+          content: post.content || "",
           time: new Date(post.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
           likes: post.likes || 0,
           comments: post.comments || 0,
-          imageUrls: post.image_urls || []
+          imageUrls: post.image_urls || [],
+          postedAsType: post.posted_as_type,
+          postedAsOrgId: post.posted_as_org_id,
+          reactionCount: post.reaction_count || 0,
+          repostCount: post.repost_count || 0,
+          editedAt: post.edited_at,
+          pinOrder: post.pin_order,
+          taggedUsersCount: tagCountMap.get(post.id) || 0
         }
       })
 
@@ -625,6 +713,7 @@ function EventDetailsContent() {
                       onPostUpdated={handlePostCreated} 
                       onPostDeleted={handlePostCreated}
                       onRepostCreated={handleRepostCreated}
+                      avatarCache={avatarCache}
                     />
                   </div>
                 ))}

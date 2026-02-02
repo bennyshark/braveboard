@@ -1,298 +1,335 @@
 // components/feed/RepostCard.tsx
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Repeat2, MessageCircle, ChevronDown, ChevronUp, Clock, Shield, Users } from "lucide-react"
-import { createBrowserClient } from "@supabase/ssr"
-import { RepostOptionsMenu } from "@/components/menus/RepostOptionsMenu"
-import { CommentSection } from "@/components/comments/CommentSection"
-import { ReactionButton } from "@/components/reactions/ReactionButton"
-import { ReactionSummary } from "@/components/reactions/ReactionSummary"
-import { RepostButton } from "@/components/reposts/RepostButton"
-import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
-import { ImagePreviewModal } from "./ImagePreviewModal"
-import { SingleImageDisplay } from "./SingleImageDisplay" // Added import
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Repeat2,
+  MessageCircle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Shield,
+  Users,
+} from "lucide-react";
+import { createBrowserClient } from "@supabase/ssr";
+import { RepostOptionsMenu } from "@/components/menus/RepostOptionsMenu";
+import { CommentSection } from "@/components/comments/CommentSection";
+import { ReactionButton } from "@/components/reactions/ReactionButton";
+import { ReactionSummary } from "@/components/reactions/ReactionSummary";
+import { RepostButton } from "@/components/reposts/RepostButton";
+import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay";
+import { ImagePreviewModal } from "./ImagePreviewModal";
+import { SingleImageDisplay } from "./SingleImageDisplay"; // Added import
+import { TruncatedText } from "../ui/TruncatedText";
 
 type OriginalContent = {
-  type: 'free_wall_post' | 'post' | 'bulletin' | 'announcement' | 'repost'
-  id: string
-  content?: string
-  header?: string
-  body?: string
-  authorId?: string
-  authorName?: string
-  authorAvatar?: string | null
-  authorType?: string
-  creatorName?: string
-  creatorAvatar?: string | null
-  creatorType?: string
-  imageUrls?: string[]
-  imageUrl?: string | null
-  createdAt: string
-  comment?: string
-  reposterId?: string
-  reposterName?: string
-  reposterAvatar?: string | null
-  contentType?: string
-  contentId?: string
-  originalContent?: any
-}
+  type: "free_wall_post" | "post" | "bulletin" | "announcement" | "repost";
+  id: string;
+  content?: string;
+  header?: string;
+  body?: string;
+  authorId?: string;
+  authorName?: string;
+  authorAvatar?: string | null;
+  authorType?: string;
+  creatorName?: string;
+  creatorAvatar?: string | null;
+  creatorType?: string;
+  imageUrls?: string[];
+  imageUrl?: string | null;
+  createdAt: string;
+  comment?: string;
+  reposterId?: string;
+  reposterName?: string;
+  reposterAvatar?: string | null;
+  contentType?: string;
+  contentId?: string;
+  originalContent?: any;
+};
 
 type Repost = {
-  id: string
-  userId: string
-  userName: string
-  userAvatar: string | null
-  contentType: 'post' | 'bulletin' | 'announcement' | 'free_wall_post' | 'repost'
-  contentId: string
-  repostComment: string | null
-  createdAt: string
-  editedAt?: string | null
-  reactionCount?: number
-  comments?: number
-  repostCount?: number
-}
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string | null;
+  contentType:
+    | "post"
+    | "bulletin"
+    | "announcement"
+    | "free_wall_post"
+    | "repost";
+  contentId: string;
+  repostComment: string | null;
+  createdAt: string;
+  editedAt?: string | null;
+  reactionCount?: number;
+  comments?: number;
+  repostCount?: number;
+};
 
 interface RepostCardProps {
-  repost: Repost
-  originalContent?: OriginalContent | null
-  onDelete?: (repostId: string) => void
-  onNavigateToContent?: (tab: string, contentId: string) => void
-  onRepostCreated?: (repost: any) => void
+  repost: Repost;
+  originalContent?: OriginalContent | null;
+  onDelete?: (repostId: string) => void;
+  onNavigateToContent?: (tab: string, contentId: string) => void;
+  onRepostCreated?: (repost: any) => void;
 }
 
-export function RepostCard({ repost, originalContent: propOriginalContent, onDelete, onNavigateToContent, onRepostCreated }: RepostCardProps) {
-  const router = useRouter()
+export function RepostCard({
+  repost,
+  originalContent: propOriginalContent,
+  onDelete,
+  onNavigateToContent,
+  onRepostCreated,
+}: RepostCardProps) {
+  const router = useRouter();
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
+  );
 
-  const [originalContent, setOriginalContent] = useState<OriginalContent | null>(propOriginalContent || null)
-  const [showComments, setShowComments] = useState(false)
-  const [reactionCount, setReactionCount] = useState(repost.reactionCount || 0)
-  const [commentCount, setCommentCount] = useState(repost.comments || 0)
-  const [repostCount, setRepostCount] = useState(repost.repostCount || 0)
-  const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [canEditTags, setCanEditTags] = useState(false)
+  const [originalContent, setOriginalContent] =
+    useState<OriginalContent | null>(propOriginalContent || null);
+  const [showComments, setShowComments] = useState(false);
+  const [reactionCount, setReactionCount] = useState(repost.reactionCount || 0);
+  const [commentCount, setCommentCount] = useState(repost.comments || 0);
+  const [repostCount, setRepostCount] = useState(repost.repostCount || 0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [canEditTags, setCanEditTags] = useState(false);
 
   // Image Preview State
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [previewIndex, setPreviewIndex] = useState(0)
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
   // We need to know which images are currently being previewed since logic varies by content type
-  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewImages, setPreviewImages] = useState<string[]>([]);
 
   useEffect(() => {
-    loadRepostData()
-  }, [repost.id])
+    loadRepostData();
+  }, [repost.id]);
 
   useEffect(() => {
     if (propOriginalContent) {
-      setOriginalContent(propOriginalContent)
+      setOriginalContent(propOriginalContent);
     }
-  }, [propOriginalContent])
+  }, [propOriginalContent]);
 
   const loadRepostData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       const { data: repostData } = await supabase
-        .from('reposts')
-        .select('*')
-        .eq('id', repost.id)
-        .maybeSingle()
+        .from("reposts")
+        .select("*")
+        .eq("id", repost.id)
+        .maybeSingle();
 
       if (repostData) {
-        setReactionCount(repostData.reaction_count || 0)
-        setCommentCount(repostData.comments || 0)
-        setRepostCount(repostData.repost_count || 0)
-        setCanEditTags(user?.id === repostData.user_id)
+        setReactionCount(repostData.reaction_count || 0);
+        setCommentCount(repostData.comments || 0);
+        setRepostCount(repostData.repost_count || 0);
+        setCanEditTags(user?.id === repostData.user_id);
       }
     } catch (error) {
-      console.error('Error loading repost data:', error)
+      console.error("Error loading repost data:", error);
     }
-  }
+  };
 
   const handleReactionChange = () => {
-    loadRepostData()
-    setRefreshTrigger(prev => prev + 1)
-  }
+    loadRepostData();
+    setRefreshTrigger((prev) => prev + 1);
+  };
 
   const getInitials = (name: string) => {
-    const parts = name.split(' ')
+    const parts = name.split(" ");
     if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
     }
-    return name.substring(0, 2).toUpperCase()
-  }
+    return name.substring(0, 2).toUpperCase();
+  };
 
   const getCreatorColor = (type: string) => {
-    switch(type) {
-      case "faith": return "from-purple-400 to-purple-600"
-      case "faith_admin": return "from-purple-400 to-purple-600"
-      case "organization": return "from-orange-400 to-orange-600"
-      default: return "from-blue-400 to-blue-600"
+    switch (type) {
+      case "faith":
+        return "from-purple-400 to-purple-600";
+      case "faith_admin":
+        return "from-purple-400 to-purple-600";
+      case "organization":
+        return "from-orange-400 to-orange-600";
+      default:
+        return "from-blue-400 to-blue-600";
     }
-  }
+  };
 
   const getCreatorIcon = (type: string) => {
-    switch(type) {
-      case "faith": return <Shield className="h-4 w-4 text-white" />
-      case "faith_admin": return <Shield className="h-4 w-4 text-white" />
-      case "organization": return <Users className="h-4 w-4 text-white" />
-      default: return null
+    switch (type) {
+      case "faith":
+        return <Shield className="h-4 w-4 text-white" />;
+      case "faith_admin":
+        return <Shield className="h-4 w-4 text-white" />;
+      case "organization":
+        return <Users className="h-4 w-4 text-white" />;
+      default:
+        return null;
     }
-  }
+  };
 
   const handleOriginalContentClick = () => {
-    if (!originalContent || !onNavigateToContent) return
-    
-    if (originalContent.type === 'free_wall_post') {
-      onNavigateToContent('free_wall', originalContent.id)
-    } else if (originalContent.type === 'post') {
-      onNavigateToContent('events', originalContent.id)
-    } else if (originalContent.type === 'bulletin') {
-      onNavigateToContent('bulletin', originalContent.id)
-    } else if (originalContent.type === 'announcement') {
-      onNavigateToContent('announcements', originalContent.id)
-    } else if (originalContent.type === 'repost') {
-      onNavigateToContent('free_wall', originalContent.id)
-    }
-  }
+    if (!originalContent || !onNavigateToContent) return;
 
-  const handleImageClick = (images: string[], index: number, e?: React.MouseEvent) => {
+    if (originalContent.type === "free_wall_post") {
+      onNavigateToContent("free_wall", originalContent.id);
+    } else if (originalContent.type === "post") {
+      onNavigateToContent("events", originalContent.id);
+    } else if (originalContent.type === "bulletin") {
+      onNavigateToContent("bulletin", originalContent.id);
+    } else if (originalContent.type === "announcement") {
+      onNavigateToContent("announcements", originalContent.id);
+    } else if (originalContent.type === "repost") {
+      onNavigateToContent("free_wall", originalContent.id);
+    }
+  };
+
+  const handleImageClick = (
+    images: string[],
+    index: number,
+    e?: React.MouseEvent
+  ) => {
     // Important: Stop propagation so we don't trigger the navigation to the post
-    if (e) e.stopPropagation()
-    setPreviewImages(images)
-    setPreviewIndex(index)
-    setPreviewOpen(true)
-  }
+    if (e) e.stopPropagation();
+    setPreviewImages(images);
+    setPreviewIndex(index);
+    setPreviewOpen(true);
+  };
 
   // Optimized Layout Renderer
   const renderMultipleImages = (images: string[]) => {
-    const count = images.length
+    const count = images.length;
 
     if (count === 2) {
       return (
         <div className="grid grid-cols-2 gap-1 mt-3 -mx-1">
           {images.map((url, idx) => (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
-              style={{ aspectRatio: '4/3' }}
+              style={{ aspectRatio: "4/3" }}
               onClick={(e) => handleImageClick(images, idx, e)}
             >
-              <img 
-                src={url} 
-                alt={`Image ${idx + 1}`} 
-                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              <img
+                src={url}
+                alt={`Image ${idx + 1}`}
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
             </div>
           ))}
         </div>
-      )
+      );
     }
 
     if (count === 3) {
       return (
         <div className="mt-3 -mx-1">
-          <div 
+          <div
             className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group mb-1"
-            style={{ aspectRatio: '16/9' }}
+            style={{ aspectRatio: "16/9" }}
             onClick={(e) => handleImageClick(images, 0, e)}
           >
-            <img 
-              src={images[0]} 
-              alt="Image 1" 
-              className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+            <img
+              src={images[0]}
+              alt="Image 1"
+              className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
           </div>
 
           <div className="grid grid-cols-2 gap-1">
             {images.slice(1, 3).map((url, idx) => (
-              <div 
-                key={idx + 1} 
+              <div
+                key={idx + 1}
                 className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
-                style={{ aspectRatio: '4/3' }}
+                style={{ aspectRatio: "4/3" }}
                 onClick={(e) => handleImageClick(images, idx + 1, e)}
               >
-                <img 
-                  src={url} 
-                  alt={`Image ${idx + 2}`} 
-                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+                <img
+                  src={url}
+                  alt={`Image ${idx + 2}`}
+                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
               </div>
             ))}
           </div>
         </div>
-      )
+      );
     }
 
     if (count === 4) {
       return (
         <div className="grid grid-cols-2 gap-1 mt-3 -mx-1">
           {images.map((url, idx) => (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
-              style={{ aspectRatio: '1/1' }}
+              style={{ aspectRatio: "1/1" }}
               onClick={(e) => handleImageClick(images, idx, e)}
             >
-              <img 
-                src={url} 
-                alt={`Image ${idx + 1}`} 
-                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              <img
+                src={url}
+                alt={`Image ${idx + 1}`}
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
             </div>
           ))}
         </div>
-      )
+      );
     }
 
     // 5+ images
-    const remaining = count - 4
+    const remaining = count - 4;
     return (
       <div className="grid grid-cols-2 gap-1 mt-3 -mx-1">
         {images.slice(0, 4).map((url, idx) => {
-          const isLast = idx === 3
-          
+          const isLast = idx === 3;
+
           return (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className="relative overflow-hidden rounded-md bg-gray-100 cursor-pointer group"
-              style={{ aspectRatio: '1/1' }}
+              style={{ aspectRatio: "1/1" }}
               onClick={(e) => handleImageClick(images, idx, e)}
             >
-              <img 
-                src={url} 
-                alt={`Image ${idx + 1}`} 
-                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" 
+              <img
+                src={url}
+                alt={`Image ${idx + 1}`}
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
               />
-              
+
               {!isLast && (
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
               )}
-              
+
               {isLast && remaining > 0 && (
                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                  <span className="text-white text-4xl font-bold drop-shadow-lg">+{remaining}</span>
+                  <span className="text-white text-4xl font-bold drop-shadow-lg">
+                    +{remaining}
+                  </span>
                 </div>
               )}
             </div>
-          )
+          );
         })}
       </div>
-    )
-  }
+    );
+  };
 
   // Wrapper for rendering content images to handle single vs multiple
   const renderContentImages = (images: string[] | null | undefined) => {
-    if (!images || images.length === 0) return null
+    if (!images || images.length === 0) return null;
 
     if (images.length === 1) {
       return (
@@ -304,11 +341,11 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
             alt="Content image"
           />
         </div>
-      )
+      );
     }
 
-    return renderMultipleImages(images)
-  }
+    return renderMultipleImages(images);
+  };
 
   return (
     <>
@@ -321,14 +358,16 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
               className="cursor-pointer"
             >
               {repost.userAvatar ? (
-                <img 
-                  src={repost.userAvatar} 
+                <img
+                  src={repost.userAvatar}
                   alt={repost.userName}
                   className="h-12 w-12 rounded-xl object-cover flex-shrink-0 shadow-sm hover:opacity-80 transition-opacity"
                 />
               ) : (
                 <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <span className="text-white font-bold text-lg">{getInitials(repost.userName)}</span>
+                  <span className="text-white font-bold text-lg">
+                    {getInitials(repost.userName)}
+                  </span>
                 </div>
               )}
             </button>
@@ -348,7 +387,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
                       Reposted
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                     <Clock className="h-3 w-3" />
                     <span>{repost.createdAt}</span>
@@ -364,7 +403,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
                 <RepostOptionsMenu
                   repostId={repost.id}
                   userId={repost.userId}
-                  comment={repost.repostComment || ''}
+                  comment={repost.repostComment || ""}
                   onDelete={onDelete}
                 />
               </div>
@@ -383,52 +422,66 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
 
           {/* Repost Comment */}
           {repost.repostComment && (
-            <p className="text-gray-800 leading-relaxed mb-4 whitespace-pre-wrap">
-              {repost.repostComment}
-            </p>
+            <TruncatedText
+              text={repost.repostComment}
+              maxLines={2}
+              className="text-gray-800 leading-relaxed mb-4"
+            />
           )}
 
           {/* Original Content */}
           {originalContent ? (
-            <div 
+            <div
               onClick={handleOriginalContentClick}
               className="bg-gray-50 rounded-xl p-4 border-2 border-gray-200 mb-4 cursor-pointer hover:bg-gray-100 hover:border-gray-300 transition-all"
             >
               <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
                 <Repeat2 className="h-3 w-3" />
-                <span className="font-medium">Original {originalContent.type.replace('_', ' ')}</span>
+                <span className="font-medium">
+                  Original {originalContent.type.replace("_", " ")}
+                </span>
               </div>
-              
+
               {/* FREE WALL POST or POST */}
-              {(originalContent.type === 'free_wall_post' || originalContent.type === 'post') && (
+              {(originalContent.type === "free_wall_post" ||
+                originalContent.type === "post") && (
                 <div>
                   <div className="flex items-center gap-3 mb-3">
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
+                        e.stopPropagation();
                         if (originalContent.authorId) {
-                          router.push(`/user/${originalContent.authorId}`)
+                          router.push(`/user/${originalContent.authorId}`);
                         }
                       }}
                       className="flex items-center gap-2 hover:opacity-80 transition-opacity"
                     >
                       {originalContent.authorAvatar ? (
-                        <img 
-                          src={originalContent.authorAvatar} 
+                        <img
+                          src={originalContent.authorAvatar}
                           alt={originalContent.authorName}
-                          className="h-10 w-10 rounded-lg object-cover shadow-sm" 
+                          className="h-10 w-10 rounded-lg object-cover shadow-sm"
                         />
                       ) : (
-                        <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(originalContent.authorType || 'user')} flex items-center justify-center shadow-sm`}>
-                          {originalContent.authorType && originalContent.authorType !== 'user' ? (
+                        <div
+                          className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(
+                            originalContent.authorType || "user"
+                          )} flex items-center justify-center shadow-sm`}
+                        >
+                          {originalContent.authorType &&
+                          originalContent.authorType !== "user" ? (
                             getCreatorIcon(originalContent.authorType)
                           ) : (
-                            <span className="text-white font-bold text-sm">{getInitials(originalContent.authorName || 'U')}</span>
+                            <span className="text-white font-bold text-sm">
+                              {getInitials(originalContent.authorName || "U")}
+                            </span>
                           )}
                         </div>
                       )}
                       <div className="text-left">
-                        <p className="font-bold text-gray-900 text-sm">{originalContent.authorName}</p>
+                        <p className="font-bold text-gray-900 text-sm">
+                          {originalContent.authorName}
+                        </p>
                         <div className="flex items-center gap-1 text-xs text-gray-500">
                           <Clock className="h-3 w-3" />
                           <span>{originalContent.createdAt}</span>
@@ -436,35 +489,47 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
                       </div>
                     </button>
                   </div>
-                  
-                  <p className="text-gray-700 text-sm leading-relaxed mb-1 whitespace-pre-wrap">{originalContent.content}</p>
-                  
+                  <TruncatedText
+                    text={originalContent.content || ""}
+                    maxLines={2}
+                    className="text-gray-700 text-sm leading-relaxed mb-1"
+                  />
                   {/* Images - Unified Logic */}
                   {renderContentImages(originalContent.imageUrls)}
                 </div>
               )}
 
               {/* BULLETIN or ANNOUNCEMENT */}
-              {(originalContent.type === 'bulletin' || originalContent.type === 'announcement') && (
+              {(originalContent.type === "bulletin" ||
+                originalContent.type === "announcement") && (
                 <div>
                   <div className="flex items-center gap-3 mb-3">
                     {originalContent.creatorAvatar ? (
-                      <img 
-                        src={originalContent.creatorAvatar} 
+                      <img
+                        src={originalContent.creatorAvatar}
                         alt={originalContent.creatorName}
-                        className="h-10 w-10 rounded-lg object-cover shadow-sm" 
+                        className="h-10 w-10 rounded-lg object-cover shadow-sm"
                       />
                     ) : (
-                      <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(originalContent.creatorType || 'user')} flex items-center justify-center shadow-sm`}>
-                        {originalContent.creatorType && originalContent.creatorType !== 'user' ? (
+                      <div
+                        className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getCreatorColor(
+                          originalContent.creatorType || "user"
+                        )} flex items-center justify-center shadow-sm`}
+                      >
+                        {originalContent.creatorType &&
+                        originalContent.creatorType !== "user" ? (
                           getCreatorIcon(originalContent.creatorType)
                         ) : (
-                          <span className="text-white font-bold text-sm">{getInitials(originalContent.creatorName || 'U')}</span>
+                          <span className="text-white font-bold text-sm">
+                            {getInitials(originalContent.creatorName || "U")}
+                          </span>
                         )}
                       </div>
                     )}
                     <div className="text-left">
-                      <p className="font-bold text-gray-900 text-sm">{originalContent.creatorName}</p>
+                      <p className="font-bold text-gray-900 text-sm">
+                        {originalContent.creatorName}
+                      </p>
                       <div className="flex items-center gap-1 text-xs text-gray-500">
                         <Clock className="h-3 w-3" />
                         <span>{originalContent.createdAt}</span>
@@ -472,47 +537,60 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
                     </div>
                   </div>
 
-                  <h4 className="font-bold text-gray-900 mb-2 text-base">{originalContent.header}</h4>
-                  <p className="text-gray-700 text-sm leading-relaxed mb-2">{originalContent.body}</p>
-                  
+                  <h4 className="font-bold text-gray-900 mb-2 text-base">
+                    {originalContent.header}
+                  </h4>
+                  <TruncatedText
+                    text={originalContent.body || ""}
+                    maxLines={2}
+                    className="text-gray-700 text-sm leading-relaxed mb-2"
+                  />
+
                   {/* Images - Logic to combine legacy 'imageUrl' with new 'imageUrls' */}
                   {(() => {
-                    const combinedImages = originalContent.imageUrls || []
-                    if (combinedImages.length === 0 && originalContent.imageUrl) {
-                      combinedImages.push(originalContent.imageUrl)
+                    const combinedImages = originalContent.imageUrls || [];
+                    if (
+                      combinedImages.length === 0 &&
+                      originalContent.imageUrl
+                    ) {
+                      combinedImages.push(originalContent.imageUrl);
                     }
-                    return renderContentImages(combinedImages)
+                    return renderContentImages(combinedImages);
                   })()}
                 </div>
               )}
 
               {/* NESTED REPOST */}
-              {originalContent.type === 'repost' && (
+              {originalContent.type === "repost" && (
                 <div>
                   <div className="flex items-center gap-3 mb-3">
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
+                        e.stopPropagation();
                         if (originalContent.reposterId) {
-                          router.push(`/user/${originalContent.reposterId}`)
+                          router.push(`/user/${originalContent.reposterId}`);
                         }
                       }}
                       className="flex items-center gap-2 hover:opacity-80 transition-opacity"
                     >
                       {originalContent.reposterAvatar ? (
-                        <img 
-                          src={originalContent.reposterAvatar} 
+                        <img
+                          src={originalContent.reposterAvatar}
                           alt={originalContent.reposterName}
-                          className="h-10 w-10 rounded-lg object-cover shadow-sm" 
+                          className="h-10 w-10 rounded-lg object-cover shadow-sm"
                         />
                       ) : (
                         <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-sm">
-                          <span className="text-white font-bold text-sm">{getInitials(originalContent.reposterName || 'U')}</span>
+                          <span className="text-white font-bold text-sm">
+                            {getInitials(originalContent.reposterName || "U")}
+                          </span>
                         </div>
                       )}
                       <div className="text-left">
                         <div className="flex items-center gap-2">
-                          <p className="font-bold text-gray-900 text-sm">{originalContent.reposterName}</p>
+                          <p className="font-bold text-gray-900 text-sm">
+                            {originalContent.reposterName}
+                          </p>
                           <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full text-xs font-bold">
                             <Repeat2 className="h-2.5 w-2.5" />
                             Reposted
@@ -525,9 +603,13 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
                       </div>
                     </button>
                   </div>
-                  
+
                   {originalContent.comment && (
-                    <p className="text-gray-700 text-sm leading-relaxed mb-3">{originalContent.comment}</p>
+                    <TruncatedText
+                      text={originalContent.comment}
+                      maxLines={2}
+                      className="text-gray-700 text-sm leading-relaxed mb-3"
+                    />
                   )}
 
                   {/* Nested original content preview */}
@@ -535,10 +617,16 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
                     <div className="ml-4 pl-4 border-l-2 border-gray-300 mt-3">
                       <div className="text-xs text-gray-500 mb-2">
                         <Repeat2 className="h-3 w-3 inline mr-1" />
-                        Original {originalContent.originalContent.type?.replace('_', ' ')}
+                        Original{" "}
+                        {originalContent.originalContent.type?.replace(
+                          "_",
+                          " "
+                        )}
                       </div>
                       <p className="text-gray-600 text-sm italic">
-                        {originalContent.originalContent.content || originalContent.originalContent.header || 'Content preview unavailable'}
+                        {originalContent.originalContent.content ||
+                          originalContent.originalContent.header ||
+                          "Content preview unavailable"}
                       </p>
                     </div>
                   )}
@@ -547,25 +635,27 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
             </div>
           ) : (
             <div className="bg-gray-50 rounded-xl p-4 border-2 border-gray-200 mb-4">
-              <p className="text-gray-500 text-sm italic">Original content unavailable</p>
+              <p className="text-gray-500 text-sm italic">
+                Original content unavailable
+              </p>
             </div>
           )}
 
           {/* Actions */}
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="flex items-center gap-1">
-              <ReactionButton 
+              <ReactionButton
                 contentType="repost"
                 contentId={repost.id}
                 onReactionChange={handleReactionChange}
               />
-              
-              <button 
+
+              <button
                 onClick={() => setShowComments(!showComments)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors ${
-                  showComments 
-                    ? 'bg-blue-100 text-blue-700' 
-                    : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
+                  showComments
+                    ? "bg-blue-100 text-blue-700"
+                    : "text-gray-700 hover:bg-blue-50 hover:text-blue-600"
                 }`}
               >
                 <MessageCircle className="h-3.5 w-3.5" />
@@ -587,9 +677,11 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
 
             <div className="flex items-center gap-2">
               {repostCount > 0 && (
-                <span className="text-xs text-gray-500">{repostCount} reposts</span>
+                <span className="text-xs text-gray-500">
+                  {repostCount} reposts
+                </span>
               )}
-              <ReactionSummary 
+              <ReactionSummary
                 contentType="repost"
                 contentId={repost.id}
                 totalCount={reactionCount}
@@ -602,7 +694,7 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
         {/* Comments */}
         {showComments && (
           <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <CommentSection 
+            <CommentSection
               contentType="repost"
               contentId={repost.id}
               initialCount={commentCount}
@@ -618,5 +710,5 @@ export function RepostCard({ repost, originalContent: propOriginalContent, onDel
         onClose={() => setPreviewOpen(false)}
       />
     </>
-  )
+  );
 }
