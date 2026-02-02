@@ -1,7 +1,7 @@
 // components/common/navbar.tsx
 "use client"
 
-import { Search, Moon, Bell, Menu } from "lucide-react"
+import { Search, Bell, Menu } from "lucide-react"
 import { useState } from "react"
 
 export default function Navbar() {
@@ -35,13 +35,6 @@ export default function Navbar() {
             <button className="p-2.5 text-stone-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors relative">
               <Bell className="h-5 w-5" />
               <span className="absolute top-2 right-2.5 h-2 w-2 bg-orange-400 rounded-full border border-white"></span>
-            </button>
-
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2.5 text-stone-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-            >
-              <Moon className="h-5 w-5" />
             </button>
             
             {/* Mobile Search Trigger */}
