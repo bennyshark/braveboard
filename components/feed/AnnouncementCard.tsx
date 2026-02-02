@@ -1,4 +1,4 @@
-// components/feed/AnnouncementCard.tsx
+// components/feed/AnnouncementCard.tsx - Updated with TruncatedText
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -12,6 +12,7 @@ import { ReactionButton } from "@/components/reactions/ReactionButton"
 import { ReactionSummary } from "@/components/reactions/ReactionSummary"
 import { RepostButton } from "@/components/reposts/RepostButton"
 import { TaggedUsersDisplay } from "@/components/tags/TaggedUsersDisplay"
+import { TruncatedText } from "@/components/ui/TruncatedText"
 import { createBrowserClient } from "@supabase/ssr"
 
 type Announcement = {
@@ -387,9 +388,12 @@ export function AnnouncementCard({ announcement, onUpdate, onRepostCreated, avat
             {announcement.header}
           </h3>
           
-          <p className="text-gray-800 leading-relaxed whitespace-pre-wrap mb-4">
-            {announcement.body}
-          </p>
+          {/* Use TruncatedText component */}
+          <TruncatedText 
+            text={announcement.body}
+            maxLines={2}
+            className="text-gray-800 leading-relaxed mb-4"
+          />
 
           {/* Display Images - Optimized Layouts */}
           {displayImages.length === 1 ? (
