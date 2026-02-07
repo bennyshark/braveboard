@@ -193,23 +193,7 @@ function OrganizationContent() {
   }
 
   async function loadPosts() {
-    // 1. Get events created by this organization
-    const { data: eventsData } = await supabase
-      .from('events')
-      .select('id')
-      .eq('creator_type', 'organization')
-      .eq('creator_org_id', orgId)
-
-    if (!eventsData || eventsData.length === 0) {
-      setPosts([])
-      return
-    }
-
-    const eventIds = eventsData.map(e => e.id)
-
-    // 2. Fetch posts that are:
-    //    a) Attached to these events
-    //    b) Posted BY the organization (not users)
+    // Directly fetch posts posted by this organization
     const { data: postsData } = await supabase
       .from('posts')
       .select(`
@@ -230,20 +214,19 @@ function OrganizationContent() {
           title
         )
       `)
-      .in('event_id', eventIds)
-      .eq('posted_as_type', 'organization') // Filter: Only organization posts
-      .eq('posted_as_org_id', orgId)      // Filter: Only posts by THIS org
+      .eq('posted_as_type', 'organization')
+      .eq('posted_as_org_id', orgId)  // orgId is 'lighthouse'
       .order('pin_order', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(50)
-
+  
     const formattedPosts = (postsData || []).map((post: any) => ({
       ...post,
       event: Array.isArray(post.event) ? post.event[0] : post.event,
       reaction_count: post.reaction_count || 0,
       repost_count: post.repost_count || 0
     })) as Post[]
-
+  
     setPosts(formattedPosts)
   }
 
@@ -291,55 +274,46 @@ function OrganizationContent() {
 
   async function loadPictures() {
     const allImages: string[] = []
-
-    const { data: eventsData } = await supabase
-      .from('events')
-      .select('id')
-      .eq('creator_type', 'organization')
-      .eq('creator_org_id', orgId)
-
-    if (eventsData && eventsData.length > 0) {
-      const eventIds = eventsData.map(e => e.id)
-      
-      // Also filter pictures to only show those from org posts
-      const { data: postsData } = await supabase
-        .from('posts')
-        .select('image_urls')
-        .in('event_id', eventIds)
-        .eq('posted_as_type', 'organization')
-        .eq('posted_as_org_id', orgId)
-
-      postsData?.forEach(post => {
-        if (post.image_urls) {
-          allImages.push(...post.image_urls)
-        }
-      })
-    }
-
+  
+    // Get posts posted by this organization (regardless of event creator)
+    const { data: postsData } = await supabase
+      .from('posts')
+      .select('image_urls')
+      .eq('posted_as_type', 'organization')
+      .eq('posted_as_org_id', orgId)
+  
+    postsData?.forEach(post => {
+      if (post.image_urls) {
+        allImages.push(...post.image_urls)
+      }
+    })
+  
+    // Get announcements created by this organization
     const { data: announcementsData } = await supabase
       .from('announcements')
       .select('image_url')
       .eq('creator_type', 'organization')
       .eq('creator_org_id', orgId)
-
+  
     announcementsData?.forEach(ann => {
       if (ann.image_url) {
         allImages.push(ann.image_url)
       }
     })
-
+  
+    // Get bulletins created by this organization
     const { data: bulletinsData } = await supabase
       .from('bulletins')
       .select('image_urls')
       .eq('creator_type', 'organization')
       .eq('creator_org_id', orgId)
-
+  
     bulletinsData?.forEach(bul => {
       if (bul.image_urls) {
         allImages.push(...bul.image_urls)
       }
     })
-
+  
     setPictures(allImages)
   }
 
