@@ -430,7 +430,7 @@ export function PostCard({
 
   return (
     <>
-      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all">
+      <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-visible shadow-sm hover:shadow-md transition-all">
         <div className="p-6">
           {/* Header */}
           <div className="flex items-start gap-3 mb-4">
