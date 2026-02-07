@@ -467,38 +467,78 @@ export default function CalendarPage() {
               
               const dayEvents = date ? getEventsForDay(date) : []
 
-              return (
-                <div
-                  key={index}
-                  onClick={() => date && setSelectedDate(date)}
-                  className={`min-h-[120px] p-2 border-r border-b border-stone-100 ${
-                    !date ? 'bg-stone-50' : 'bg-white hover:bg-stone-50 cursor-pointer'
-                  } transition-colors relative`}
-                >
-                  {date && (
-                    <>
-                      <div className={`text-sm font-bold mb-2 ${
-                        isToday 
-                          ? 'text-white bg-blue-600 rounded-full w-7 h-7 flex items-center justify-center' 
-                          : 'text-stone-700'
-                      }`}>
-                        {date.getDate()}
-                      </div>
-                      
-                      <div className="space-y-1">
-                        {dayEvents.slice(0, 3).map((item, i) => (
-                          <EventBadge key={i} item={item} />
-                        ))}
-                        {dayEvents.length > 3 && (
-                          <div className="text-xs text-stone-500 font-bold pl-2">
-                            +{dayEvents.length - 3} more
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )
+              {
+                // Smart selection: prioritize pinned events and show diverse types
+                const getDisplayItems = (items: any[]) => {
+                  if (items.length <= 3) return items
+                  
+                  const pinnedEvents = items.filter(i => i.type === 'event' && i.is_pinned)
+                  const regularEvents = items.filter(i => i.type === 'event' && !i.is_pinned)
+                  const schedules = items.filter(i => i.type === 'schedule')
+                  
+                  const selected: any[] = []
+                  
+                  // Priority 1: Show pinned events first
+                  if (pinnedEvents.length > 0) {
+                    selected.push(pinnedEvents[0])
+                  }
+                  
+                  // Priority 2: Show diversity - add 1 regular event if available and space left
+                  if (selected.length < 3 && regularEvents.length > 0) {
+                    selected.push(regularEvents[0])
+                  }
+                  
+                  // Priority 3: Add 1 schedule if available and space left
+                  if (selected.length < 3 && schedules.length > 0) {
+                    selected.push(schedules[0])
+                  }
+                  
+                  // Fill remaining slots with whatever is left, prioritizing pinned > events > schedules
+                  if (selected.length < 3) {
+                    const remaining = items.filter(item => !selected.includes(item))
+                    while (selected.length < 3 && remaining.length > 0) {
+                      selected.push(remaining.shift()!)
+                    }
+                  }
+                  
+                  return selected.slice(0, 3)
+                }
+                
+                const displayItems = date ? getDisplayItems(dayEvents) : []
+                
+                return (
+                  <div
+                    key={index}
+                    onClick={() => date && setSelectedDate(date)}
+                    className={`min-h-[120px] p-2 border-r border-b border-stone-100 ${
+                      !date ? 'bg-stone-50' : 'bg-white hover:bg-stone-50 cursor-pointer'
+                    } transition-colors relative`}
+                  >
+                    {date && (
+                      <>
+                        <div className={`text-sm font-bold mb-2 ${
+                          isToday 
+                            ? 'text-white bg-blue-600 rounded-full w-7 h-7 flex items-center justify-center' 
+                            : 'text-stone-700'
+                        }`}>
+                          {date.getDate()}
+                        </div>
+                        
+                        <div className="space-y-1">
+                          {displayItems.map((item, i) => (
+                            <EventBadge key={i} item={item} />
+                          ))}
+                          {dayEvents.length > 3 && (
+                            <div className="text-xs text-stone-500 font-bold pl-2">
+                              +{dayEvents.length - 3} more
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              }
             })}
           </div>
         </div>
