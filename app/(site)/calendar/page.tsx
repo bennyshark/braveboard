@@ -16,7 +16,8 @@ import {
   MapPin,
   FileText,
   Tag,
-  ArrowLeft
+  ArrowLeft,
+  Trash2
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { createBrowserClient } from "@supabase/ssr"
@@ -246,7 +247,7 @@ export default function CalendarPage() {
 
     if (filterType === 'all' || filterType === 'schedules') {
       const visibleSchedules = schedules.filter(canSeeSchedule)
-      items = [...items, ...visibleSchedules.map(s => ({ ...s, type: 'schedule' }))]
+      items = [...items, ...visibleSchedules.map((s: Schedule) => ({ ...s, type: 'schedule' as const }))]
     }
 
     return items
@@ -277,12 +278,28 @@ export default function CalendarPage() {
     if (!date) return []
     
     const items = getVisibleItems()
-    const dateStr = date.toISOString().split('T')[0]
+    // Format date as YYYY-MM-DD in local timezone
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const dateStr = `${year}-${month}-${day}`
     
     const filtered = items.filter(item => {
-      const startDate = new Date(item.start_date).toISOString().split('T')[0]
-      const endDate = new Date(item.end_date).toISOString().split('T')[0]
-      return dateStr >= startDate && dateStr <= endDate
+      // Parse the stored datetime and get local date
+      const startDateTime = new Date(item.start_date)
+      const endDateTime = new Date(item.end_date)
+      
+      const startYear = startDateTime.getFullYear()
+      const startMonth = String(startDateTime.getMonth() + 1).padStart(2, '0')
+      const startDay = String(startDateTime.getDate()).padStart(2, '0')
+      const startDateStr = `${startYear}-${startMonth}-${startDay}`
+      
+      const endYear = endDateTime.getFullYear()
+      const endMonth = String(endDateTime.getMonth() + 1).padStart(2, '0')
+      const endDay = String(endDateTime.getDate()).padStart(2, '0')
+      const endDateStr = `${endYear}-${endMonth}-${endDay}`
+      
+      return dateStr >= startDateStr && dateStr <= endDateStr
     })
     
     // Sort by start time
@@ -325,6 +342,11 @@ export default function CalendarPage() {
       organizations={organizations}
       departments={departments}
       courses={courses}
+      isAdmin={isAdmin}
+      supabase={supabase}
+      setSchedules={setSchedules}
+      setEvents={setEvents}
+      currentDate={currentDate}
     />
   }
 
@@ -502,7 +524,10 @@ export default function CalendarPage() {
       {showAddModal && (
         <AddScheduleModal
           onClose={() => setShowAddModal(false)}
-          onSave={loadData}
+          onSave={() => {
+            setShowAddModal(false)
+            loadData()
+          }}
           departments={departments}
           courses={courses}
           organizations={organizations}
@@ -578,18 +603,93 @@ function EventBadge({ item }: { item: any }) {
 }
 
 // Day View Component
-function DayView({ date, items, onBack, organizations, departments, courses }: any) {
+function DayView({ 
+  date, 
+  items, 
+  onBack, 
+  organizations, 
+  departments, 
+  courses,
+  isAdmin,
+  supabase,
+  setSchedules,
+  setEvents,
+  currentDate
+}: any) {
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [localItems, setLocalItems] = useState(items)
   const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
   const dateStr = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
+  // Update local items when items prop changes
+  useEffect(() => {
+    setLocalItems(items)
+  }, [items])
+
   // Sort items by start time
-  const sortedItems = [...items].sort((a, b) => 
+  const sortedItems = [...localItems].sort((a, b) => 
     new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
   )
 
   // Group by type
   const events = sortedItems.filter(item => item.type === 'event')
   const schedules = sortedItems.filter(item => item.type === 'schedule')
+
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    if (!confirm('Are you sure you want to delete this schedule?')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('schedules')
+        .delete()
+        .eq('id', scheduleId)
+
+      if (error) throw error
+
+      // Update local items immediately
+      setLocalItems(localItems.filter((item: any) => item.id !== scheduleId))
+
+      // Update parent state
+      setSchedules((prev: Schedule[]) => prev.filter((s: Schedule) => s.id !== scheduleId))
+
+      alert('Schedule deleted successfully!')
+    } catch (error: any) {
+      console.error('Error deleting schedule:', error)
+      alert(`Failed to delete: ${error.message}`)
+    }
+  }
+
+  const handleScheduleAdded = async () => {
+    // Fetch the newly added schedules for the current month
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+
+    const { data: schedulesData } = await supabase
+      .from('schedules')
+      .select('*')
+      .gte('start_date', startOfMonth.toISOString())
+      .lte('end_date', endOfMonth.toISOString())
+
+    if (schedulesData) {
+      setSchedules(schedulesData)
+      
+      // Update local items with new schedules for this specific day
+      const dateStr = date.toISOString().split('T')[0]
+      const newSchedulesForDay = schedulesData
+        .filter((s: Schedule) => {
+          const startDate = new Date(s.start_date).toISOString().split('T')[0]
+          const endDate = new Date(s.end_date).toISOString().split('T')[0]
+          return dateStr >= startDate && dateStr <= endDate
+        })
+        .map((s: Schedule) => ({ ...s, type: 'schedule' as const }))
+
+      // Merge with existing events (keep events, update schedules)
+      const eventsOnly = localItems.filter((item: any) => item.type === 'event')
+      setLocalItems([...eventsOnly, ...newSchedulesForDay])
+    }
+  }
 
   const getTargetName = (item: any) => {
     if (item.type === 'schedule') {
@@ -629,11 +729,23 @@ function DayView({ date, items, onBack, organizations, departments, courses }: a
     >
       <div className="flex items-start justify-between mb-2">
         <h3 className="font-black text-stone-800">{item.title}</h3>
-        <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-          item.type === 'event' ? 'bg-green-200 text-green-800' : 'bg-purple-200 text-purple-800'
-        }`}>
-          {item.type === 'event' ? 'Event' : 'Schedule'}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+            item.type === 'event' ? 'bg-green-200 text-green-800' : 'bg-purple-200 text-purple-800'
+          }`}>
+            {item.type === 'event' ? 'Event' : 'Schedule'}
+          </span>
+          {/* Delete button for schedules only */}
+          {item.type === 'schedule' && isAdmin && (
+            <button
+              onClick={() => handleDeleteSchedule(item.id)}
+              className="p-1.5 hover:bg-red-100 rounded-lg transition-colors text-red-600"
+              title="Delete schedule"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
       
       {item.description && (
@@ -695,8 +807,22 @@ function DayView({ date, items, onBack, organizations, departments, courses }: a
         </button>
 
         <div className="bg-white rounded-2xl border-2 border-stone-100 p-6 mb-6">
-          <h1 className="text-3xl font-black text-stone-800 mb-1">{dayName}</h1>
-          <p className="text-stone-500">{dateStr}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-black text-stone-800 mb-1">{dayName}</h1>
+              <p className="text-stone-500">{dateStr}</p>
+            </div>
+            
+            {isAdmin && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg"
+              >
+                <Plus className="h-5 w-5" />
+                Add Schedule
+              </button>
+            )}
+          </div>
         </div>
 
         {sortedItems.length === 0 ? (
@@ -727,6 +853,22 @@ function DayView({ date, items, onBack, organizations, departments, courses }: a
           </div>
         )}
       </div>
+
+      {/* Add Schedule Modal with prefilled date */}
+      {showAddModal && (
+        <AddScheduleModal
+          onClose={() => setShowAddModal(false)}
+          onSave={() => {
+            setShowAddModal(false)
+            handleScheduleAdded()
+          }}
+          departments={departments}
+          courses={courses}
+          organizations={organizations}
+          supabase={supabase}
+          prefilledDate={date}
+        />
+      )}
     </div>
   )
 }
@@ -738,12 +880,41 @@ function AddScheduleModal({
   departments, 
   courses, 
   organizations,
-  supabase 
+  supabase,
+  prefilledDate
 }: any) {
+  // Format date for datetime-local input (YYYY-MM-DDTHH:MM)
+  const formatDateForInput = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  }
+
+  const getInitialStartDate = () => {
+    if (prefilledDate) {
+      const date = new Date(prefilledDate)
+      date.setHours(8, 0, 0, 0) // Set to 8:00 AM
+      return formatDateForInput(date)
+    }
+    return ''
+  }
+
+  const getInitialEndDate = () => {
+    if (prefilledDate) {
+      const date = new Date(prefilledDate)
+      date.setHours(9, 0, 0, 0) // Set to 9:00 AM (1 hour after start)
+      return formatDateForInput(date)
+    }
+    return ''
+  }
+
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const [startDate, setStartDate] = useState(getInitialStartDate())
+  const [endDate, setEndDate] = useState(getInitialEndDate())
   const [location, setLocation] = useState('')
   const [scheduleType, setScheduleType] = useState<'all' | 'course' | 'department' | 'organization'>('all')
   const [selectedTargets, setSelectedTargets] = useState<string[]>([])
@@ -772,11 +943,17 @@ function AddScheduleModal({
 
     setIsSubmitting(true)
     try {
+      // Convert datetime-local string to ISO string with proper timezone
+      // datetime-local gives us "2026-02-05T08:00" which is in LOCAL time
+      // We need to tell Supabase this is local time, not UTC
+      const startDateTime = new Date(startDate).toISOString()
+      const endDateTime = new Date(endDate).toISOString()
+
       const { error } = await supabase.from('schedules').insert({
         title: title.trim(),
         description: description.trim(),
-        start_date: startDate,
-        end_date: endDate,
+        start_date: startDateTime,
+        end_date: endDateTime,
         location: location.trim() || null,
         schedule_type: scheduleType,
         target_codes: scheduleType === 'all' ? [] : selectedTargets
@@ -786,7 +963,6 @@ function AddScheduleModal({
 
       alert('Schedule created successfully!')
       onSave()
-      onClose()
     } catch (error: any) {
       console.error('Error creating schedule:', error)
       alert(`Failed: ${error.message}`)
